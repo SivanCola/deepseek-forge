@@ -43,6 +43,24 @@ Use the deepseek-forge skill to implement:
 
 Codex will collect context, ask DeepSeek for a patch, validate it, review it, apply it, run checks, and request a fix patch if checks fail.
 
+## Trigger Phrases
+
+For reliable activation, mention `deepseek-forge` or `DeepSeek` explicitly:
+
+```text
+Use the deepseek-forge skill to implement:
+<task>
+```
+
+Other useful phrases:
+
+- `use deepseek`
+- `delegate this to DeepSeek`
+- `ask DeepSeek to generate the patch`
+- `use DeepSeek to fix these failing tests`
+- `ask DeepSeek to review this patch`
+- `DeepSeek should generate the patch; Codex should review, apply, and test it`
+
 ## Configuration
 
 Only `DEEPSEEK_API_KEY` is required.
@@ -113,7 +131,7 @@ Advanced debugging environment variables:
 
 ## MCP Tools
 
-The plugin includes a `deepseek-mcp` server with these tools:
+The plugin includes a `deepseek-forge-mcp` server with these tools:
 
 | Tool | Purpose |
 |---|---|

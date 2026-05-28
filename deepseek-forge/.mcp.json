@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "deepseek-mcp": {
+    "deepseek-forge-mcp": {
       "command": "python3",
       "args": ["mcp/deepseek-mcp/server.py"],
       "env": {

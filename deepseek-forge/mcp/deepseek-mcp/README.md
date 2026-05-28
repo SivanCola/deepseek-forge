@@ -1,4 +1,4 @@
-# deepseek-mcp
+# deepseek-forge-mcp
 
 MCP server used by `deepseek-forge`.
 

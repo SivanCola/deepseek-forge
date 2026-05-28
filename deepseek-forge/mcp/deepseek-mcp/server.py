@@ -31,7 +31,7 @@ TOOLS = {
 }
 
 SERVER_INFO = {
-    "name": "deepseek-mcp",
+    "name": "deepseek-forge-mcp",
     "version": "0.1.0",
     "protocolVersion": "2024-11-05",
 }
@@ -99,7 +99,7 @@ def handle_request(request: dict):
 
 def main():
     print(
-        f"[deepseek-mcp] Server starting (v{SERVER_INFO['version']})",
+        f"[deepseek-forge-mcp] Server starting (v{SERVER_INFO['version']})",
         file=sys.stderr,
     )
 
@@ -111,13 +111,13 @@ def main():
             request = json.loads(line)
             handle_request(request)
         except json.JSONDecodeError as e:
-            print(f"[deepseek-mcp] Invalid JSON: {e}", file=sys.stderr)
+            print(f"[deepseek-forge-mcp] Invalid JSON: {e}", file=sys.stderr)
             _send_error(None, -32700, "Parse error")
         except Exception as e:
-            print(f"[deepseek-mcp] Unexpected error: {e}", file=sys.stderr)
+            print(f"[deepseek-forge-mcp] Unexpected error: {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
 
-    print("[deepseek-mcp] Server shutting down", file=sys.stderr)
+    print("[deepseek-forge-mcp] Server shutting down", file=sys.stderr)
 
 
 if __name__ == "__main__":

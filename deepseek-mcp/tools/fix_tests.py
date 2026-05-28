@@ -39,13 +39,13 @@ def _extract_diff(response_text: str) -> str:
 
     if text.startswith("```diff"):
         print(
-            "[deepseek-mcp] Warning: removing diff code fences from response",
+            "[deepseek-forge-mcp] Warning: removing diff code fences from response",
             file=sys.stderr,
         )
         text = text[len("```diff"):].strip()
     elif text.startswith("```"):
         print(
-            "[deepseek-mcp] Warning: removing code fences from response",
+            "[deepseek-forge-mcp] Warning: removing code fences from response",
             file=sys.stderr,
         )
         text = text[len("```"):].strip()
@@ -78,7 +78,7 @@ def _extract_diff(response_text: str) -> str:
 
     if total_stripped > 0:
         print(
-            f"[deepseek-mcp] Warning: stripped {total_stripped} non-diff lines from response",
+            f"[deepseek-forge-mcp] Warning: stripped {total_stripped} non-diff lines from response",
             file=sys.stderr,
         )
 

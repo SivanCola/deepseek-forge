@@ -1,4 +1,4 @@
-"""Shared configuration and API helpers for deepseek-mcp tools."""
+"""Shared configuration and API helpers for deepseek-forge-mcp tools."""
 
 import json
 import os

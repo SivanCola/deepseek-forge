@@ -43,6 +43,24 @@ Use the deepseek-forge skill to implement:
 
 Codex 会自动收集上下文、让 DeepSeek 生成 patch、校验并审查 patch、应用改动、运行检查；如果检查失败，会把脱敏后的日志发给 DeepSeek 生成修复 patch。
 
+## 触发用法
+
+为了稳定触发，请明确提到 `deepseek-forge` 或 `DeepSeek`：
+
+```text
+用 deepseek-forge 处理这个任务：
+<任务描述>
+```
+
+也可以使用这些说法：
+
+- `use deepseek`
+- `delegate this to DeepSeek`
+- `让 DeepSeek 生成 patch`
+- `用 DeepSeek 修复这些测试失败`
+- `让 DeepSeek review 这个 patch`
+- `DeepSeek 只生成 patch，Codex 负责审查、应用和测试`
+
 ## 配置
 
 只有 `DEEPSEEK_API_KEY` 必填。
@@ -113,7 +131,7 @@ bash scripts/run_checks.sh
 
 ## MCP 工具
 
-插件包含 `deepseek-mcp` server，提供以下工具：
+插件包含 `deepseek-forge-mcp` server，提供以下工具：
 
 | 工具 | 用途 |
 |---|---|
