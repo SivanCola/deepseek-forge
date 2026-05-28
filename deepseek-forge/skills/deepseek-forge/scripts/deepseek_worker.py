@@ -6,16 +6,16 @@ references/prompt_templates.md, calls the DeepSeek chat completions API, and
 writes a validated unified diff patch to the output file.
 
 Usage:
-    python3 scripts/deepseek_worker.py \
-        --model deepseek-v4-pro \
-        --task task.md \
-        --context .deepseek-forge/repo_context.md \
-        --output .deepseek-forge/patch.diff \
-        --template implement_patch \
-        --endpoint https://api.deepseek.com/chat/completions \
-        --api-key-env DEEPSEEK_API_KEY \
-        --temperature 0.2 \
-        --timeout 120 \
+    python3 scripts/deepseek_worker.py \\
+        --model deepseek-v4-pro \\
+        --task task.md \\
+        --context .deepseek-forge/repo_context.md \\
+        --output .deepseek-forge/patch.diff \\
+        --template implement_patch \\
+        --endpoint https://api.deepseek.com/chat/completions \\
+        --api-key-env DEEPSEEK_API_KEY \\
+        --temperature 0.2 \\
+        --timeout 120 \\
         [--failure-log .deepseek-forge/check.log]
 
 Uses only stdlib -- no external dependencies.
@@ -73,29 +73,29 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--template",
-        required=True,
+        default="implement_patch",
         help="Name of the template to use from references/prompt_templates.md",
     )
     parser.add_argument(
         "--endpoint",
-        required=True,
+        default="https://api.deepseek.com/chat/completions",
         help="DeepSeek API endpoint URL",
     )
     parser.add_argument(
         "--api-key-env",
-        required=True,
+        default="DEEPSEEK_API_KEY",
         help="Name of the environment variable holding the API key",
     )
     parser.add_argument(
         "--temperature",
-        required=True,
         type=float,
+        default=0.2,
         help="Temperature for the API request",
     )
     parser.add_argument(
         "--timeout",
-        required=True,
         type=int,
+        default=120,
         help="Request timeout in seconds",
     )
     parser.add_argument(
@@ -167,11 +167,14 @@ def extract_diff(response_text: str) -> str:
     """Extract a validated unified diff from the model's response.
 
     * Strips markdown code fences if present (emits a warning to stderr).
+    * Finds the actual diff boundaries (first ``--- `` line through last valid diff
+      content line) and strips non-diff commentary before/after the diff.
     * Validates the result via :func:`validate_diff`.
 
     Returns the diff string on success.
     Raises :class:`ValueError` if no valid diff is found.
     """
+    # --- Step 1: remove markdown code fences --------------------------------
     lines = response_text.splitlines()
     start_idx: int | None = None
     end_idx: int | None = None
@@ -190,12 +193,53 @@ def extract_diff(response_text: str) -> str:
             file=sys.stderr,
         )
         if end_idx is not None:
-            result = "\n".join(lines[start_idx + 1 : end_idx]).strip()
+            raw = "\n".join(lines[start_idx + 1 : end_idx]).strip()
         else:
-            result = "\n".join(lines[start_idx + 1 :]).strip()
+            raw = "\n".join(lines[start_idx + 1 :]).strip()
     else:
-        result = response_text.strip()
+        raw = response_text.strip()
 
+    raw_lines = raw.splitlines()
+
+    # --- Step 2: find first diff header line --------------------------------
+    first_diff_idx: int | None = None
+    for i, line in enumerate(raw_lines):
+        if line.startswith("--- "):
+            first_diff_idx = i
+            break
+
+    if first_diff_idx is None:
+        raise ValueError("Response does not contain a valid unified diff")
+
+    # --- Step 3: find last valid diff content line (scan backwards) ---------
+    # Valid unified-diff lines start with +, -, space, @, \\, or are blank.
+    def _is_diff_line(line: str) -> bool:
+        if not line:
+            return True
+        return line[0] in ("+", "-", " ", "@", "\\")
+
+    last_diff_idx = first_diff_idx
+    for i in range(len(raw_lines) - 1, first_diff_idx - 1, -1):
+        if _is_diff_line(raw_lines[i]):
+            last_diff_idx = i
+            break
+
+    # --- Step 4: warn about stripped commentary -----------------------------
+    non_diff_before = first_diff_idx
+    non_diff_after = len(raw_lines) - last_diff_idx - 1
+    total_stripped = non_diff_before + non_diff_after
+
+    if total_stripped > 0:
+        print(
+            f"Warning: stripped {total_stripped} non-diff lines from response",
+            file=sys.stderr,
+        )
+
+    # --- Step 5: extract only the diff portion ------------------------------
+    diff_lines = raw_lines[first_diff_idx : last_diff_idx + 1]
+    result = "\n".join(diff_lines).strip()
+
+    # --- Step 6: validate ---------------------------------------------------
     if not validate_diff(result):
         raise ValueError("Response does not contain a valid unified diff")
 
@@ -208,7 +252,8 @@ def validate_diff(diff_text: str) -> bool:
     Checks performed:
 
     * Not empty.
-    * Contains ``--- a/`` and ``+++ b/`` file headers.
+    * **Starts with** ``--- `` (first non-blank line is a diff file header).
+    * Contains ``--- a/`` or ``--- /dev/null`` and ``+++ b/`` file headers.
     * Contains ``@@ ... @@`` hunk headers.
     * Does **not** contain shell commands (``$ `` / ``> `` / ``bash`` / ``#!/bin/``).
     * Does **not** contain git commands (``git add`` / ``git commit`` / ``git push``).
@@ -217,6 +262,15 @@ def validate_diff(diff_text: str) -> bool:
         return False
 
     lines = diff_text.splitlines()
+
+    # Must start with a diff header (first non-blank line starts with --- ).
+    first_non_blank: str | None = None
+    for line in lines:
+        if line.strip():
+            first_non_blank = line
+            break
+    if first_non_blank is None or not first_non_blank.startswith("--- "):
+        return False
 
     # Must have at least one source and destination header.
     # Accept both "--- a/path" and "--- /dev/null" (new files).
@@ -310,6 +364,43 @@ def sanitize_error_text(text: str) -> str:
     return text
 
 
+def sanitize_log_content(text: str) -> str:
+    """Redact sensitive information from log content before sending to the LLM.
+
+    Redacts: Bearer tokens, API keys, environment variables with secrets,
+    URL credentials, and common key patterns (AWS, GitHub, OpenAI).
+    """
+    # 1. Redact "Authorization: Bearer <token>" and standalone Bearer tokens.
+    text = re.sub(
+        r"Authorization:\s*Bearer\s+\S+",
+        "Authorization: Bearer [REDACTED]",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\bBearer\s+\S+", "Bearer [REDACTED]", text)
+
+    # 2. Redact KEY=value, SECRET=value, TOKEN=value, PASSWORD=value,
+    #    PASSWD=value (case-insensitive).  Matches standalone keywords or
+    #    keywords embedded in longer names (e.g. api_key=, GITHUB_TOKEN=).
+    text = re.sub(
+        r"(?i)([\w]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD))\s*=\s*\S+",
+        r"\1=[REDACTED]",
+        text,
+    )
+
+    # 3. Redact URL credentials: ://user:pass@
+    text = re.sub(r"://[^@\s]+@", "://[REDACTED]@", text)
+
+    # 4. Redact common key patterns: AWS AKIA..., OpenAI sk-..., GitHub tokens.
+    text = re.sub(r"\bAKIA[A-Z0-9]{16}\b", "AKIA[REDACTED]", text)
+    text = re.sub(r"\bsk-[A-Za-z0-9]+\b", "sk-[REDACTED]", text)
+    text = re.sub(r"\bghp_[A-Za-z0-9]+\b", "ghp_[REDACTED]", text)
+    text = re.sub(r"\bgho_[A-Za-z0-9]+\b", "gho_[REDACTED]", text)
+    text = re.sub(r"\bgithub_pat_[A-Za-z0-9_]+\b", "github_pat_[REDACTED]", text)
+
+    return text
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -351,6 +442,7 @@ def main(argv: list[str] | None = None) -> None:
                 "Warning: Failure log truncated to last 500 lines",
                 file=sys.stderr,
             )
+        failure_log = sanitize_log_content(failure_log)
         user_parts.append(failure_log)
 
     user_message = "\n\n".join(user_parts)

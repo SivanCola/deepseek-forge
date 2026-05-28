@@ -1,10 +1,10 @@
 """Tool: deepseek.fix_tests — Generate fix patch for failing tests via DeepSeek API."""
 
-import json
 import os
 import re
 import sys
-import urllib.request
+
+from . import config
 
 FIX_TESTS_SCHEMA = {
     "description": "Generate a fix patch for failing tests using DeepSeek",
@@ -32,49 +32,6 @@ FIX_TESTS_SCHEMA = {
         "required": ["task", "context", "failure_log"],
     },
 }
-
-
-def _read_template(template_name: str) -> str:
-    tool_dir = os.path.dirname(__file__)
-
-    # Build search paths in priority order
-    search_paths = [
-        os.path.join(tool_dir, "..", "..", "..", "skills", "deepseek-forge", "references", "prompt_templates.md"),
-        os.path.join(tool_dir, "..", "..", "references", "prompt_templates.md"),
-    ]
-
-    # Add env var path if set
-    env_path = os.environ.get("DEEPSEEK_TEMPLATE_PATH")
-    if env_path:
-        search_paths.append(env_path)
-
-    tmpl_path = None
-    for p in search_paths:
-        if os.path.exists(p):
-            tmpl_path = p
-            break
-
-    if tmpl_path is None:
-        raise FileNotFoundError(
-            f"Template file not found. Searched: {', '.join(search_paths)}"
-        )
-
-    content = open(tmpl_path).read()
-    marker = f"## Template: `{template_name}`"
-    alt_marker = f"## Template: {template_name}"
-
-    start = content.find(marker)
-    if start == -1:
-        start = content.find(alt_marker)
-    if start == -1:
-        raise ValueError(f"Template '{template_name}' not found in {tmpl_path}")
-
-    body_start = content.find("\n", start) + 1
-    remainder = content[body_start:]
-    next_section = remainder.find("\n## Template:")
-    if next_section != -1:
-        return remainder[:next_section].strip()
-    return remainder.strip()
 
 
 def _extract_diff(response_text: str) -> str:
@@ -155,45 +112,6 @@ def _validate_diff(diff_text: str):
             raise ValueError(f"Response contains prohibited git command: '{stripped}'")
 
 
-def _call_api(
-    endpoint: str,
-    api_key: str,
-    model: str,
-    messages: list,
-    temperature: float,
-    timeout: int,
-) -> str:
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-            return result["choices"][0]["message"]["content"]
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(
-            f"DeepSeek API HTTP {e.code}: {body[:500]}"
-        )
-    except (TimeoutError, OSError) as e:
-        raise RuntimeError(f"DeepSeek API request failed: {e}")
-
-
 def _sanitize_log_content(text: str) -> str:
     """Redact sensitive information from log content before sending to API."""
     # Redact Bearer tokens
@@ -213,6 +131,7 @@ def _sanitize_log_content(text: str) -> str:
 
 
 def handle_fix_tests(arguments: dict) -> dict:
+    cfg = config.get_config()
     task = arguments["task"]
     context = arguments["context"]
     failure_log = arguments["failure_log"]
@@ -223,21 +142,7 @@ def handle_fix_tests(arguments: dict) -> dict:
     # Sanitize sensitive data before sending to API
     failure_log = _sanitize_log_content(failure_log)
 
-    endpoint = os.environ.get(
-        "DEEPSEEK_ENDPOINT", "https://api.deepseek.com/chat/completions"
-    )
-    api_key_env = os.environ.get("DEEPSEEK_API_KEY_ENV", "DEEPSEEK_API_KEY")
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        raise RuntimeError(
-            f"API key environment variable '{api_key_env}' is not set"
-        )
-
-    model = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    temperature = float(os.environ.get("DEEPSEEK_TEMPERATURE", "0.2"))
-    timeout = int(os.environ.get("DEEPSEEK_TIMEOUT", "120"))
-
-    system_prompt = _read_template("fix_tests")
+    system_prompt = config.read_template("fix_tests")
 
     failure_lines = failure_log.split("\n")
     if len(failure_lines) > 500:
@@ -255,7 +160,12 @@ def handle_fix_tests(arguments: dict) -> dict:
         {"role": "user", "content": user_content},
     ]
 
-    raw_response = _call_api(endpoint, api_key, model, messages, temperature, timeout)
+    request_body = config.build_request_body(
+        cfg["model"], messages, cfg["reasoning_effort"]
+    )
+    raw_response = config.call_api(
+        cfg["endpoint"], cfg["api_key"], request_body, cfg["timeout"]
+    )
     diff_text = _extract_diff(raw_response)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

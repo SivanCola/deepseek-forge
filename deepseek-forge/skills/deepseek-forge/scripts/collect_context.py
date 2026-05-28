@@ -9,7 +9,7 @@ Produces a structured Markdown document containing:
 - Relevant source file contents (prioritized by keyword match against the task)
 - A summary section with inclusion metrics
 
-Uses only stdlib -- no external dependencies.
+Uses only stdlib — no external dependencies.
 """
 
 from __future__ import annotations
@@ -443,16 +443,21 @@ def main(argv: list[str] | None = None) -> None:
         required=True,
         help="Path where the generated Markdown file will be written.",
     )
+    # Defaults vary with 1M context mode
+    _enable_1m = os.environ.get("DEEPSEEK_ENABLE_1M_CONTEXT", "true").lower() in ("true", "1")
+    _default_max_files = 200 if _enable_1m else 80
+    _default_max_bytes = 500_000 if _enable_1m else 120_000
+
     parser.add_argument(
         "--max-files",
         type=int,
-        default=80,
+        default=_default_max_files,
         help="Maximum number of source files to include (default: %(default)s).",
     )
     parser.add_argument(
         "--max-bytes",
         type=int,
-        default=120_000,
+        default=_default_max_bytes,
         help="Maximum total output bytes (default: %(default)s).",
     )
     args = parser.parse_args(argv)

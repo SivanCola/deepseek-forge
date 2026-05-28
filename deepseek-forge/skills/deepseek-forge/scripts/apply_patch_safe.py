@@ -25,29 +25,51 @@ def parse_patch_file(patch_path: str) -> str:
 def extract_file_paths(patch_content: str) -> list[str]:
     """Extract file paths from unified diff headers.
 
-    Uses the standard ``--- a/<path>`` and ``+++ b/<path>`` markers.
-    Paths from both sides are collected (``/dev/null`` is not matched
-    because those headers use no ``a/`` nor ``b/`` prefix).
+    Handles both standard ``--- a/<path>`` / ``+++ b/<path>`` markers
+    and headers without ``a/`` or ``b/`` prefix (e.g. ``--- /tmp/evil.txt``
+    or ``--- file.py``).  ``/dev/null`` is always excluded as it is a
+    diff marker, not a real file path.
     """
     paths: set[str] = set()
     for line in patch_content.splitlines():
+        # Standard prefixed format
         m = re.match(r'^--- a/(.+)$', line)
         if m:
             paths.add(m.group(1))
+            continue
         m = re.match(r'^\+\+\+ b/(.+)$', line)
         if m:
             paths.add(m.group(1))
-    return sorted(paths)
+            continue
+        # Without a/ or b/ prefix
+        m = re.match(r'^--- (.+)$', line)
+        if m:
+            paths.add(m.group(1))
+            continue
+        m = re.match(r'^\+\+\+ (.+)$', line)
+        if m:
+            paths.add(m.group(1))
+            continue
+    # Exclude /dev/null which is a valid diff marker, not a real path
+    return sorted(p for p in paths if p != '/dev/null')
 
 
 # ---------------------------------------------------------------------------
-# Safety checks -- each returns (passed: bool, error_message: str)
+# Safety checks – each returns (passed: bool, error_message: str)
 # ---------------------------------------------------------------------------
 
 def check_empty(patch_content: str) -> tuple[bool, str]:
     """Reject if the patch file is empty or contains only whitespace."""
     if not patch_content.strip():
         return False, "Patch file is empty or contains only whitespace"
+    return True, ""
+
+
+def check_no_files_referenced(patch_content: str) -> tuple[bool, str]:
+    """Reject if the patch does not reference any file paths."""
+    file_paths = extract_file_paths(patch_content)
+    if not file_paths:
+        return False, "Patch does not reference any files"
     return True, ""
 
 
@@ -128,7 +150,11 @@ def check_shell_injection(patch_content: str) -> tuple[bool, str]:
 
 
 def check_valid_diff_format(patch_content: str) -> tuple[bool, str]:
-    """Reject if the content does not look like a unified diff."""
+    """Reject if the content does not look like a unified diff.
+
+    Requires structural markers (``---``, ``+++``, ``@@``) *and* at least
+    one header that references a real file path (not ``/dev/null``).
+    """
     has_from = bool(re.search(r'^--- ', patch_content, re.MULTILINE))
     has_to = bool(re.search(r'^\+\+\+ ', patch_content, re.MULTILINE))
     has_hunk = bool(re.search(r'^@@ ', patch_content, re.MULTILINE))
@@ -136,6 +162,13 @@ def check_valid_diff_format(patch_content: str) -> tuple[bool, str]:
         return False, (
             "File does not appear to be a valid unified diff "
             "(missing ---, +++, or @@ markers)"
+        )
+    # Verify at least one ---/+++ header references a real file path
+    file_paths = extract_file_paths(patch_content)
+    if not file_paths:
+        return False, (
+            "File does not appear to be a valid unified diff "
+            "(no real file paths found in ---/+++ headers)"
         )
     return True, ""
 
@@ -150,13 +183,14 @@ def run_all_checks(patch_content: str) -> list[str]:
     If the returned list is empty all checks passed.
     """
     checks: list[tuple[str, callable]] = [
-        ("Empty patch",       check_empty),
-        ("Absolute paths",    check_absolute_paths),
-        ("Path traversal",    check_path_traversal),
-        ("Git directory",     check_git_dir),
-        ("File deletion",     check_file_deletion),
-        ("Shell injection",   check_shell_injection),
-        ("Valid diff format", check_valid_diff_format),
+        ("Empty patch",          check_empty),
+        ("No files referenced",  check_no_files_referenced),
+        ("Absolute paths",       check_absolute_paths),
+        ("Path traversal",       check_path_traversal),
+        ("Git directory",        check_git_dir),
+        ("File deletion",        check_file_deletion),
+        ("Shell injection",      check_shell_injection),
+        ("Valid diff format",    check_valid_diff_format),
     ]
 
     failures: list[str] = []
@@ -251,12 +285,12 @@ def main() -> None:
         print(f"ERROR: git apply --check failed: {msg}")
         sys.exit(1)
 
-    # 5. Check mode -- stop here
+    # 5. Check mode – stop here
     if args.check:
         print("CHECK PASSED: Patch is safe to apply")
         sys.exit(0)
 
-    # 6. Apply mode -- apply the patch for real
+    # 6. Apply mode – apply the patch for real
     ok, msg = git_apply(patch_content)
     if not ok:
         print(f"ERROR: git apply failed: {msg}")

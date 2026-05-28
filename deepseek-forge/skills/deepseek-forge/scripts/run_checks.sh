@@ -48,6 +48,20 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
+# Verbose output mode (env RUN_CHECKS_VERBOSE=1)
+# ---------------------------------------------------------------------------
+VERBOSE=false
+if [ "${RUN_CHECKS_VERBOSE:-0}" = "1" ]; then
+    VERBOSE=true
+fi
+
+verbose_log() {
+    if ${VERBOSE}; then
+        echo "[VERBOSE] $*" | tee -a "$LOG_FILE"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 FAILED_COMMANDS=()   # human-readable descriptions of what failed
@@ -138,6 +152,7 @@ DETECTED=false
 # ---- Node.js / JavaScript / TypeScript -----------------------------------
 if [ -f "package.json" ]; then
     DETECTED=true
+    verbose_log "Node.js detection: found package.json"
     echo "" | tee -a "$LOG_FILE"
     echo "=== Node.js / JavaScript / TypeScript project detected ===" | tee -a "$LOG_FILE"
 
@@ -173,6 +188,7 @@ fi
 # ---- Python ----------------------------------------------------------------
 if [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ] || [ -f "requirements.txt" ]; then
     DETECTED=true
+    verbose_log "Python detection: found config file(s) (pyproject.toml, setup.py, setup.cfg, or requirements.txt)"
     echo "" | tee -a "$LOG_FILE"
     echo "=== Python project detected ===" | tee -a "$LOG_FILE"
 
@@ -209,6 +225,7 @@ fi
 # ---- Go --------------------------------------------------------------------
 if [ -f "go.mod" ]; then
     DETECTED=true
+    verbose_log "Go detection: found go.mod"
     echo "" | tee -a "$LOG_FILE"
     echo "=== Go project detected ===" | tee -a "$LOG_FILE"
     run_check "Go tests" "go test ./..."
@@ -217,6 +234,7 @@ fi
 # ---- Rust ------------------------------------------------------------------
 if [ -f "Cargo.toml" ]; then
     DETECTED=true
+    verbose_log "Rust detection: found Cargo.toml"
     echo "" | tee -a "$LOG_FILE"
     echo "=== Rust project detected ===" | tee -a "$LOG_FILE"
     run_check "Rust tests" "cargo test"
@@ -226,9 +244,40 @@ fi
 if [ -f "Makefile" ]; then
     if grep -qE '^test:' Makefile 2>/dev/null; then
         DETECTED=true
+        verbose_log "Make detection: found Makefile with test target"
         echo "" | tee -a "$LOG_FILE"
         echo "=== Make test target detected ===" | tee -a "$LOG_FILE"
         run_check "make test" "make test"
+    fi
+fi
+
+# ---- Python (test-file fallback, no config files) ---------------------------
+if ! ${DETECTED}; then
+    verbose_log "Python fallback: searching for test files (no config files found)"
+
+    # Search for Python test files anywhere in the repo
+    py_test_files="$(find . \
+        -not -path '*/node_modules/*' \
+        -not -path '*/.git/*' \
+        -not -path '*/__pycache__/*' \
+        -not -path '*/venv/*' \
+        -not -path '*/.venv/*' \
+        \( -name 'test_*.py' -o -name '*_test.py' \) \
+        -print -quit 2>/dev/null)"
+
+    if [ -n "${py_test_files}" ]; then
+        DETECTED=true
+        verbose_log "Python fallback: detected via test files (e.g. ${py_test_files})"
+        echo "" | tee -a "$LOG_FILE"
+        echo "=== Python project detected (test-file fallback) ===" | tee -a "$LOG_FILE"
+
+        run_check "Python unittest"  "python3 -m unittest discover"
+
+        if command -v python3 &>/dev/null && python3 -c "import pytest" 2>/dev/null; then
+            run_check "Python pytest"    "python3 -m pytest"
+        fi
+    else
+        verbose_log "Python fallback: no test files found"
     fi
 fi
 

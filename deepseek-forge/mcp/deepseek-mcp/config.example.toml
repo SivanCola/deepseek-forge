@@ -1,3 +1,10 @@
+# NOTE: This file documents the configuration *conceptually*.
+# At runtime, all settings come from environment variables or internal defaults.
+# Editing this file has no effect on the running MCP server.
+#
+# See the public env vars in README.md for the canonical config surface:
+#   DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_REASONING_EFFORT, DEEPSEEK_ENABLE_1M_CONTEXT
+
 [api]
 endpoint = "https://api.deepseek.com/chat/completions"
 model = "deepseek-v4-pro"
@@ -5,9 +12,13 @@ api_key_env = "DEEPSEEK_API_KEY"
 temperature = 0.2
 timeout = 120
 
+[reasoning]
+effort = "max"
+
 [context]
-max_files = 80
-max_bytes = 120000
+enable_1m_context = true
+max_files = 200
+max_bytes = 500000
 
 [server]
 name = "deepseek-mcp"
