@@ -1,0 +1,14 @@
+[api]
+endpoint = "https://api.deepseek.com/chat/completions"
+model = "deepseek-v4-pro"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.2
+timeout = 120
+
+[context]
+max_files = 80
+max_bytes = 120000
+
+[server]
+name = "deepseek-mcp"
+version = "0.1.0"

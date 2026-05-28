@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "deepseek-mcp": {
+      "command": "python3",
+      "args": ["mcp/deepseek-mcp/server.py"],
+      "env": {
+        "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}"
+      }
+    }
+  }
+}

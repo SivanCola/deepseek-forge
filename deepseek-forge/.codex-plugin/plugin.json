@@ -1,0 +1,19 @@
+{
+  "name": "deepseek-forge",
+  "version": "0.1.0",
+  "description": "Orchestrates Codex planning with DeepSeek implementation. Codex plans the work, DeepSeek generates unified diff patches, Codex reviews and applies them safely.",
+  "author": {
+    "name": "deepseek-forge"
+  },
+  "skills": "skills",
+  "mcpServers": ".mcp.json",
+  "interface": {
+    "displayName": "DeepSeek Forge",
+    "shortDescription": "Codex plans, DeepSeek codes, you review — safe patch-based code generation with automated fix loops.",
+    "longDescription": "DeepSeek Forge is a disciplined pipeline that turns task descriptions into reviewed, tested, and applied code patches. Codex acts as the architect and gatekeeper — it plans the work, collects context, validates patches, applies changes, runs checks, and decides whether to commit. DeepSeek is a sandboxed patch generator that receives structured prompts and returns only unified diffs. Every patch passes through multi-layer safety validation before touching the working tree. A built-in fix loop automatically retries failed patches up to 3 times by feeding failure logs back to DeepSeek.",
+    "developerName": "deepseek-forge",
+    "category": "Developer Tools",
+    "defaultPrompt": "Use the deepseek-forge skill to orchestrate Codex planning with DeepSeek code generation. Codex plans the work, DeepSeek generates unified diff patches, Codex reviews and applies them safely.",
+    "capabilities": ["plan", "implement", "fix", "review"]
+  }
+}
