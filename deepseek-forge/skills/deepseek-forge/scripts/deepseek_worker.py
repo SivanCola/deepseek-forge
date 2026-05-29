@@ -5,18 +5,33 @@ Reads task and repository context, builds a prompt using a named template from
 references/prompt_templates.md, calls the DeepSeek chat completions API, and
 writes a validated unified diff patch to the output file.
 
+Environment variables:
+    ``DEEPSEEK_FORGE_HOME``
+        Override the root directory where SKILL.md and
+        ``references/prompt_templates.md`` are located.  Defaults to the
+        parent directory of this script.
+
 Usage:
     python3 scripts/deepseek_worker.py \\
         --model deepseek-v4-pro \\
         --task task.md \\
         --context .deepseek-forge/repo_context.md \\
-        --output .deepseek-forge/patch.diff \\
         --template implement_patch \\
         --endpoint https://api.deepseek.com/chat/completions \\
         --api-key-env DEEPSEEK_API_KEY \\
         --temperature 0.2 \\
         --timeout 120 \\
+        [--output .deepseek-forge/patch.diff] \\
         [--failure-log .deepseek-forge/check.log]
+
+    ``--output`` is optional.  The default is ``{artifact_dir}/patch.diff``
+    (or ``{artifact_dir}/fix.patch.diff`` when ``--template fix_tests``),
+    where ``artifact_dir`` is resolved via :func:`forge_config.get_artifact_dir`.
+
+    After extracting the patch, the script runs lightweight
+    :func:`_validate_output_completeness` checks (warnings only, never blocking)
+    to help downstream Codex semantic review by flagging missing file references,
+    cosmetic-only diffs, and test-file coverage gaps.
 
 Uses only stdlib -- no external dependencies.
 """
@@ -33,12 +48,30 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from forge_config import get_artifact_dir, get_forge_home
+
 # ---------------------------------------------------------------------------
-# Project paths (resolved relative to this script's location)
+# Project paths (resolved via DEEPSEEK_FORGE_HOME, with script-location fallback)
 # ---------------------------------------------------------------------------
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_TEMPLATE_PATH = _PROJECT_ROOT / "references" / "prompt_templates.md"
+_SCRIPT_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _resolve_template_path() -> Path:
+    """Locate ``references/prompt_templates.md``.
+
+    Prefer ``DEEPSEEK_FORGE_HOME`` if set, otherwise fall back to the
+    directory containing this script's parent.
+    """
+    forge_home = get_forge_home()
+    path = forge_home / "references" / "prompt_templates.md"
+    if path.is_file():
+        return path
+    # Fallback: script-relative location.
+    fallback = _SCRIPT_PROJECT_ROOT / "references" / "prompt_templates.md"
+    return fallback
+
+
+_TEMPLATE_PATH = _resolve_template_path()
 
 
 # ---------------------------------------------------------------------------
@@ -68,8 +101,10 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        required=True,
-        help="Path where the generated patch will be written",
+        default=None,
+        help="Path where the generated patch will be written "
+             "(default: {artifact_dir}/patch.diff, or "
+             "{artifact_dir}/fix.patch.diff when --template fix_tests).",
     )
     parser.add_argument(
         "--template",
@@ -304,6 +339,131 @@ def validate_diff(diff_text: str) -> bool:
     return True
 
 
+def _validate_output_completeness(content: str, template: str) -> list[str]:
+    """Run lightweight completeness checks on the generated patch.
+
+    Returns a list of warning strings (never blocks -- flagging only).
+    Warnings help downstream Codex semantic review by pointing out gaps
+    in the generated output.
+
+    For ``implement_patch``:
+        * Checks for at least one ``--- a/`` or ``--- /dev/null`` file header.
+        * Warns if the diff appears to be cosmetic-only (all +/- lines differ
+          only in whitespace).
+        * Checks for at least one ``+`` line (not just deletions).
+
+    For ``fix_tests``:
+        * Checks that at least one file modified is a test file (``test_*``
+          or ``*_test.*``).
+        * Warns if only non-test files are touched (may indicate wrong fix
+          strategy).
+    """
+    warnings: list[str] = []
+
+    if not content or not content.strip():
+        warnings.append("Output is empty or whitespace-only")
+        return warnings
+
+    lines = content.splitlines()
+
+    # --- Extract file paths from diff headers ---------------------------
+    # Match both "--- a/path" and "--- /dev/null" (new files), plus "+++ b/path".
+    src_paths: list[str] = []
+    dst_paths: list[str] = []
+    for line in lines:
+        if line.startswith("--- a/") or line.startswith("--- /dev/null"):
+            # Strip the prefix: "--- a/" or "--- /dev/null"
+            if line.startswith("--- /dev/null"):
+                src_paths.append("/dev/null")
+            else:
+                src_paths.append(line[6:])  # len("--- a/") == 6
+        elif line.startswith("+++ b/"):
+            dst_paths.append(line[6:])  # len("+++ b/") == 6
+
+    all_paths = [p for p in src_paths if p != "/dev/null"] + dst_paths
+
+    # --- Common checks --------------------------------------------------
+    # Extract lines that are actual content changes (+, -, not headers).
+    plus_lines = [
+        l for l in lines
+        if l.startswith("+") and not l.startswith("+++ ")
+    ]
+    minus_lines = [
+        l for l in lines
+        if l.startswith("-") and not l.startswith("--- ")
+    ]
+
+    plus_content = [l[1:] for l in plus_lines]
+    minus_content = [l[1:] for l in minus_lines]
+
+    has_plus_line = len(plus_lines) > 0
+
+    # --- Template-specific checks ---------------------------------------
+    if template == "implement_patch":
+        # Check: has at least one file header.
+        if not src_paths:
+            warnings.append(
+                "Diff contains no file headers "
+                "(--check for source files)"
+            )
+        if not dst_paths:
+            warnings.append(
+                "Diff contains no destination file headers "
+                "(--check for modified files)"
+            )
+
+        # Check: has at least one + line (actual additions).
+        if not has_plus_line:
+            warnings.append(
+                "Diff has no '+' lines "
+                "(--code changes may be missing)"
+            )
+
+        # Check: not purely cosmetic (all +/- lines differ only in whitespace).
+        if plus_content and minus_content:
+            # Collect all changed content lines, strip whitespace.
+            changed_set = set()
+            for pc in plus_content:
+                changed_set.add(pc.strip())
+            for mc in minus_content:
+                changed_set.add(mc.strip())
+            # If after stripping, all changed lines are identical,
+            # only whitespace differs -> cosmetic.
+            if len(changed_set) == 1:
+                warnings.append(
+                    "Diff appears to be cosmetic-only "
+                    "(all +/- lines differ only in whitespace)"
+                )
+
+    elif template == "fix_tests":
+        # Check: at least one file path looks like a test file.
+        test_file_patterns = re.compile(r"(?:^|/)test_[^/]+|(?:^|/)[^/]+_test\.[^/]+$")
+
+        test_files = sorted(set(p for p in all_paths if test_file_patterns.search(p)))
+        non_test_files = sorted(set(p for p in all_paths if not test_file_patterns.search(p)))
+
+        if not test_files:
+            if non_test_files:
+                warnings.append(
+                    f"Template is fix_tests but only non-test files "
+                    f"are modified: {', '.join(non_test_files)}. "
+                    f"(--verify that the fix targets the right files)"
+                )
+            else:
+                warnings.append(
+                    "Template is fix_tests but no test file paths "
+                    "were detected in the diff"
+                )
+        elif non_test_files:
+            warnings.append(
+                f"Template is fix_tests but non-test files are also "
+                f"modified: {', '.join(non_test_files)}. "
+                f"(--verify that non-test changes are intentional)"
+            )
+
+    return warnings
+
+
 # ---------------------------------------------------------------------------
 # API helpers
 # ---------------------------------------------------------------------------
@@ -410,6 +570,14 @@ def main(argv: list[str] | None = None) -> None:
     parser = create_parser()
     args = parser.parse_args(argv)
 
+    # --- 0. Resolve default output path ----------------------------------
+    if args.output is None:
+        artifact_dir = get_artifact_dir()
+        filename = (
+            "fix.patch.diff" if args.template == "fix_tests" else "patch.diff"
+        )
+        args.output = str(artifact_dir / filename)
+
     # --- 1. Read API key from environment --------------------------------
     api_key = os.environ.get(args.api_key_env)
     if not api_key:
@@ -500,6 +668,11 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(sanitize_error_text(content), file=sys.stderr)
         sys.exit(1)
+
+    # --- 8.5 Validate output completeness ------------------------------
+    completeness_warnings = _validate_output_completeness(patch, args.template)
+    for w in completeness_warnings:
+        print(f"[deepseek-forge] WARNING: {w}", file=sys.stderr)
 
     # --- 9. Write patch to output file -----------------------------------
     output_path = Path(args.output)

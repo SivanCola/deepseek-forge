@@ -2,7 +2,7 @@
 
 ## Overview
 
-The orchestrator enables a structured collaboration between Codex and DeepSeek: Codex plans the work, DeepSeek generates implementation patches as unified diffs, and Codex validates, applies, and verifies those patches. **Codex is the sole executor** -- it owns the repository, runs all commands, and makes all decisions. DeepSeek operates as a **diff-only interface**: it reads context, reasons about changes, and outputs nothing but a unified diff patch. DeepSeek never touches the filesystem, never runs a command, and never interacts with git.
+The orchestrator enables a structured collaboration between Codex and DeepSeek: Codex plans the work, DeepSeek generates implementation patches as unified diffs, and Codex validates, applies, and verifies those patches. **Codex is the sole executor** — it owns the repository, runs all commands, and makes all decisions. DeepSeek operates as a **diff-only interface**: it reads context, reasons about changes, and outputs nothing but a unified diff patch. DeepSeek never touches the filesystem, never runs a command, and never interacts with git.
 
 This separation of concerns ensures safety (Codex gates all side effects) while leveraging each model's strengths: Codex for high-level reasoning and orchestration, DeepSeek for focused, low-level code generation.
 

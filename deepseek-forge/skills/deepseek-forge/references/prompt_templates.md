@@ -27,7 +27,7 @@ Analyze the plan and context, then generate a unified diff patch that implements
 
 ---
 
-## CRITICAL OUTPUT RULES -- 禁止违反以下规则
+## CRITICAL OUTPUT RULES — 禁止违反以下规则
 
 ### 规则 1: 只输出 unified diff，不得输出任何其他内容
 - Output ONLY the unified diff. Nothing else.
@@ -168,7 +168,7 @@ Analyze the failure log and generate a unified diff patch that fixes ONLY the re
 
 ---
 
-## CRITICAL OUTPUT RULES -- 禁止违反以下规则
+## CRITICAL OUTPUT RULES — 禁止违反以下规则
 
 ### 规则 1: 只输出 unified diff，不得输出任何其他内容
 - Output ONLY the unified diff. Nothing else.
@@ -275,7 +275,7 @@ Review the patch and output a JSON object with your assessment.
 
 ---
 
-## CRITICAL OUTPUT RULES -- 禁止违反以下规则
+## CRITICAL OUTPUT RULES — 禁止违反以下规则
 
 ### 规则 1: 只输出 JSON，不得输出任何其他内容
 - Output ONLY a valid JSON object. Nothing else.
@@ -329,7 +329,7 @@ Check the patch for each of the following. Report any issues you find.
 ### 6. Scope
 - Does the patch change files unrelated to the plan?
 - Are there unnecessary refactors or cleanups mixed in?
-- Is there "scope creep" -- changes beyond what the plan requested?
+- Is there "scope creep" — changes beyond what the plan requested?
 
 ---
 

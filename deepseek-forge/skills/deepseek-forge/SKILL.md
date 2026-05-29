@@ -1,5 +1,6 @@
 ---
 name: deepseek-forge
+license: MIT
 description: >
   Orchestrates Codex planning with DeepSeek implementation. When a user asks
   Codex to implement features, fix bugs, or generate code patches using DeepSeek,
@@ -14,6 +15,32 @@ Codex plans the work; DeepSeek outputs unified diffs. Codex is the sole executor
 
 ---
 
+## Mandatory Output Fields
+
+Every output from DeepSeek (patch, fix plan, or branch surgery report) MUST include
+these four dimensions. Codex must verify all four are present before proceeding.
+
+| # | Dimension | Patch Mode | Branch Surgery Mode |
+|---|---|---|---|
+| 1 | **涉及 PR / Head Ref** | File paths in the diff (`--- a/`, `+++ b/`) | PR number, head ref, base ref, head SHA |
+| 2 | **验证命令** | `run_checks.sh` output | `git log`, `git diff --stat`, `gh pr view --json` commands |
+| 3 | **风险点** | No dangerous operations (shell, git, file deletion) | Force-push risk, shared-head risk, cherry-pick conflict risk, fork remote risk |
+| 4 | **回滚方案** | `git apply -R` or `git checkout -- <file>` | Backup branch creation + `git push --force-with-lease` restore |
+
+### Codex Verification Checklist
+
+After receiving any DeepSeek output, Codex MUST verify:
+
+- [ ] All affected PRs / files are explicitly listed
+- [ ] Verification commands are present and copy-paste runnable
+- [ ] Risk points are explicitly stated (not implied)
+- [ ] Rollback plan exists and is executable
+
+If any dimension is missing, Codex must request a re-generation or supplement the output
+manually before proceeding.
+
+---
+
 ## Trigger Scenarios
 
 Activate this skill when the user:
@@ -22,7 +49,74 @@ Activate this skill when the user:
 - Wants to generate a patch with DeepSeek
 - Needs to fix test failures with DeepSeek assistance
 - Asks for a patch review from DeepSeek
+- Needs to split or restructure PR branches (shared head, stacked branches)
+- Wants to generate a branch split plan for multiple PRs
 - Says "use deepseek" or "delegate to deepseek"
+
+---
+
+## Branch Surgery Workflow
+
+This mode handles PR branch topology tasks — when multiple PRs share the same head SHA and need to be split into independent branches.
+
+### When to Enter This Mode
+
+- The task is classified as `pr_branch_topology_task` by `scripts/task_classifier.py`
+- Multiple PRs point at the same commit SHA on a common base ref
+- The user asks to split, restructure, or untangle stacked/chained PR branches
+
+### Step-by-Step
+
+1. **Classify the task.** Run task classification to detect the topology scenario. `pr_branch_topology_task` routes to this workflow instead of the standard patch workflow.
+
+2. **Collect lightweight context.** Use `collect_context.py --mode pr-branch-topology` to gather only git/PR metadata — no source code. This keeps the context payload small and focused.
+
+3. **Detect shared heads and generate split plan.** `scripts/branch_surgery.py` analyzes the branch topology, computes per-PR commit ranges and file lists, and produces safe push commands with `--force-with-lease`.
+
+4. **Review the plan.** Inspect each split command. Verify the expected SHA, target branch name, and commit range are correct. **Never execute commands automatically.**
+
+5. **Execute manually.** Run each push command after confirming it matches expectations. Each command uses `--force-with-lease=<remote-ref>:<expected-sha>` for safety.
+
+6. **Post-push verification.** Run the verification checklist:
+   - Check commits on each pushed branch match the plan
+   - Verify files changed match the plan
+   - Confirm head SHA and base ref are correct
+
+**Mandatory output validation:** Before proceeding past the plan stage, verify the
+report contains all four mandatory output fields. See [Mandatory Output Fields](#mandatory-output-fields).
+
+### Safety Rules for Branch Surgery
+
+- **Dry-run only.** `branch_surgery.py` never auto-executes git mutations. No commits, no pushes.
+- **Force-with-lease is mandatory.** Every push command uses `--force-with-lease=<remote-ref>:<expected-sha>`. Plain `--force` is never emitted.
+- **Human-in-the-loop.** All generated commands require manual review and execution.
+- **No automatic git writes of any kind.** Branches, tags, and reflogs are never modified by the script.
+
+### Branch Surgery Commands
+
+```bash
+# Classify the task (returns task type and routing info)
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/task_classifier.py \
+  "$(cat task.md)"
+
+# Collect lightweight git/PR context (no source code)
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/collect_context.py \
+  --mode pr-branch-topology \
+  --task task.md \
+  --output .deepseek-forge/repo_context.md
+
+# Generate the branch split plan
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/branch_surgery.py \
+  --output .deepseek-forge/branch_surgery.md
+```
+
+### pr_branch_topology_task Handling Notes
+
+When a task is classified as `pr_branch_topology_task`:
+
+- Does **NOT** call `implement_patch`. The standard deepseek_worker patch generation step is skipped.
+- Does **NOT** require DeepSeek to produce a unified diff. The output is a branch split plan, not a code patch.
+- For full GitHub review tasks (PR comments, inline reviews, approval workflows), prefer using `gh-pr-review-resolver` instead. `deepseek-forge` branch surgery focuses on git topology restructuring, not code-level PR review.
 
 ---
 
@@ -35,6 +129,10 @@ Follow these steps in order. Do not skip safety steps.
 2. **Collect repository context.** Run `scripts/collect_context.py` to gather relevant source files, project configs, and git state into a single Markdown file. This prevents sending irrelevant or oversized files to DeepSeek.
 
 3. **Generate the patch.** Run `scripts/deepseek_worker.py` with the `implement_patch` template. DeepSeek receives the task, plan, and repository context, and must produce a unified diff.
+
+**3a. Validate mandatory fields.** After the patch is generated, verify all four
+mandatory output dimensions are present. See [Mandatory Output Fields](#mandatory-output-fields).
+If the patch output is incomplete, re-generate with more specific instructions.
 
 4. **Validate the patch.** Run `scripts/apply_patch_safe.py --check` to run all safety validations and `git apply --check` without modifying the working tree.
 
@@ -106,6 +204,7 @@ During review, verify:
 - [ ] No file deletions (unless explicitly requested and confirmed)
 - [ ] No test bypasses, relaxed assertions, or reduced validation
 - [ ] No obvious bugs, type errors, or missing edge cases
+- [ ] **Mandatory fields present:** Affected PRs/files, verification commands, risk points, rollback plan
 
 ---
 
@@ -121,37 +220,46 @@ Read these files when the situation demands deeper context:
 
 ## Quick Start Commands
 
-The canonical MVP command sequence. Run all of these from the repository root:
+The canonical MVP command sequence. Run all of these from the repository root.
+
+When deepseek-forge is installed as a plugin, use ``${DEEPSEEK_FORGE_HOME}`` to locate the scripts:
 
 ```bash
 # Prepare the runtime directory
 mkdir -p .deepseek-forge
 
 # Step 1: Collect repository context
-python3 scripts/collect_context.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/collect_context.py \
   --task task.md \
   --output .deepseek-forge/repo_context.md
 
 # Step 2: Generate patch via DeepSeek
-python3 scripts/deepseek_worker.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/deepseek_worker.py \
   --model deepseek-v4-pro \
   --task task.md \
   --context .deepseek-forge/repo_context.md \
   --output .deepseek-forge/patch.diff
 
 # Step 3: Validate the patch before applying
-python3 scripts/apply_patch_safe.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py \
   --patch .deepseek-forge/patch.diff \
   --check
 
 # Step 4: Apply the validated patch
-python3 scripts/apply_patch_safe.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py \
   --patch .deepseek-forge/patch.diff \
   --apply
 
 # Step 5: Run the project's test and lint suite
-scripts/run_checks.sh
+bash ${DEEPSEEK_FORGE_HOME}/scripts/run_checks.sh
 ```
+
+**Note:** Runtime artifacts are written to ``DEEPSEEK_FORGE_ARTIFACT_DIR`` (defaults to ``/tmp/deepseek-forge-{pid}/``). To keep artifacts in the target repo, set ``DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge``. If using ``.deepseek-forge/`` as the artifact directory, consider adding it to ``.git/info/exclude``:
+
+```bash
+echo '.deepseek-forge/' >> .git/info/exclude
+```
+
 
 ---
 
@@ -161,7 +269,7 @@ When `run_checks.sh` fails, use this sequence:
 
 ```bash
 # Generate a fix patch using failure log
-python3 scripts/deepseek_worker.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/deepseek_worker.py \
   --model deepseek-v4-pro \
   --task task.md \
   --context .deepseek-forge/repo_context.md \
@@ -170,15 +278,15 @@ python3 scripts/deepseek_worker.py \
   --failure-log .deepseek-forge/check.log
 
 # Validate the fix patch
-python3 scripts/apply_patch_safe.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py \
   --patch .deepseek-forge/fix.patch.diff \
   --check
 
 # Apply the fix patch
-python3 scripts/apply_patch_safe.py \
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py \
   --patch .deepseek-forge/fix.patch.diff \
   --apply
 
 # Re-run checks
-scripts/run_checks.sh
+bash ${DEEPSEEK_FORGE_HOME}/scripts/run_checks.sh
 ```

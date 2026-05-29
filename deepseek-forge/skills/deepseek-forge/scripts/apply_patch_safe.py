@@ -4,6 +4,14 @@ Safely validate and apply unified diff patches.
 
 Performs a series of safety checks on the patch file before allowing
 application, then delegates to git apply for the actual patching.
+
+Environment variables:
+    ``DEEPSEEK_FORGE_ARTIFACT_DIR``
+        When set, indicates the directory containing patch files written by
+        other deepseek-forge scripts.  This script reads patches from any
+        path specified via ``--patch``, so the variable does not change its
+        behaviour directly, but callers should use it for generating the
+        ``--patch`` argument.
 """
 
 import argparse

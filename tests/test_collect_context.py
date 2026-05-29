@@ -701,5 +701,319 @@ class TestKeywordPriorityOrdering(unittest.TestCase):
         self.assertEqual(zero_paths, sorted(zero_paths, key=str))
 
 
+class TestPRBranchTopologyMode(unittest.TestCase):
+    """Test the --mode pr-branch-topology feature.
+
+    Uses the same mocking patterns as TestIntegrationWorkflow: patch run_git,
+    run_gh, and Path.cwd, then drive everything through cc.main(argv).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self.tmp.name)
+
+        # Minimal simulated repo — only files needed by the main() driver.
+        _make_dir(self.repo_root, ".git")
+        _make_file(self.repo_root, ".git/config", "[core]\n")
+        _make_file(self.repo_root, "README.md", "# My Project\n")
+
+        # Task file (required by --task).
+        self.task_path = _make_file(
+            self.repo_root, "task.md",
+            "# PR Topology Analysis\n\nCheck branch topology for the release.\n",
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    # ------------------------------------------------------------------
+    # Shared mock helpers
+    # ------------------------------------------------------------------
+
+    def _fake_run_git(self, args, cwd):
+        """Return canned git output that exercises every topological section."""
+        cmd = tuple(args)
+        if cmd == ("status", "--short"):
+            return " M README.md\n?? newfile.py\n"
+        elif cmd == ("branch", "--show-current"):
+            return "feature/test-branch\n"
+        elif cmd == ("remote", "-v"):
+            return (
+                "origin  git@github.com:user/myproject.git (fetch)\n"
+                "origin  git@github.com:user/myproject.git (push)\n"
+            )
+        elif cmd == ("log", "--oneline", "--graph", "--all", "-20"):
+            return (
+                "* abc1234 Fix login bug\n"
+                "* def5678 Add feature X\n"
+            )
+        elif cmd == ("log", "--oneline", "-20"):
+            return (
+                "abc1234 Fix login bug\n"
+                "def5678 Add feature X\n"
+            )
+        elif cmd == ("diff", "--stat", "HEAD~10..HEAD"):
+            return " README.md | 2 ++\n src/main.py | 5 +++++\n"
+        elif cmd == ("merge-base", "HEAD", "feature/test-branch"):
+            return "def5678\n"
+        elif cmd == ("merge-base", "HEAD", "main"):
+            return "def5678\n"
+        elif cmd == ("branch",):
+            return "* feature/test-branch\n  main\n"
+        return ""
+
+    def _fake_run_gh(self, args, cwd):
+        """Return canned gh CLI output for PR list/comments/files."""
+        cmd = tuple(args)
+        if len(args) >= 4 and args[0] == "pr" and args[1] == "list" and args[2] == "--json":
+            return (
+                '[{"number":42,"title":"Fix login bug",'
+                '"headRefName":"feature/test-branch",'
+                '"baseRefName":"main",'
+                '"headRefOid":"abc1234",'
+                '"baseRefOid":"def5678"}]'
+            )
+        if len(args) >= 3 and args[0] == "pr" and args[1] == "view" and args[2] == "42":
+            # We get two calls: one for commits, one for files.
+            return "abc1234\ndef5678\n" if "commits" in args else "src/main.py\nREADME.md\n"
+        return ""
+
+    # ------------------------------------------------------------------
+    # Test cases
+    # ------------------------------------------------------------------
+
+    def test_mode_flag_parsed_correctly(self):
+        """Verify the --mode argument accepts 'default' and 'pr-branch-topology',
+        with 'default' as the default value, and rejects unknown values."""
+        parser = cc.argparse.ArgumentParser()
+        parser.add_argument("--task", required=True)
+        parser.add_argument("--output", default=None)
+        parser.add_argument(
+            "--mode",
+            choices=["default", "pr-branch-topology"],
+            default="default",
+        )
+
+        # Default value is 'default'.
+        args = parser.parse_args(["--task", "t.md", "--output", "o.md"])
+        self.assertEqual(args.mode, "default")
+
+        # Explicit 'default'.
+        args2 = parser.parse_args(
+            ["--task", "t.md", "--output", "o.md", "--mode", "default"]
+        )
+        self.assertEqual(args2.mode, "default")
+
+        # Explicit 'pr-branch-topology'.
+        args3 = parser.parse_args(
+            ["--task", "t.md", "--output", "o.md", "--mode", "pr-branch-topology"]
+        )
+        self.assertEqual(args3.mode, "pr-branch-topology")
+
+        # Invalid mode raises SystemExit.
+        with contextlib.redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(
+                    ["--task", "t.md", "--output", "o.md", "--mode", "invalid"]
+                )
+
+    def test_pr_topology_output_has_git_sections(self):
+        """Run in pr-branch-topology mode with mocked git/gh and verify the
+        output contains every topological section but NOT source or config."""
+        output_path = self.repo_root / "topology_output.md"
+
+        with patch("collect_context.run_git", side_effect=self._fake_run_git):
+            with patch("collect_context.run_gh", side_effect=self._fake_run_gh):
+                with patch("collect_context.Path.cwd", return_value=self.repo_root):
+                    argv = [
+                        "--task", str(self.task_path),
+                        "--output", str(output_path),
+                        "--mode", "pr-branch-topology",
+                    ]
+                    cc.main(argv)
+
+        self.assertTrue(output_path.exists())
+        content = output_path.read_text(encoding="utf-8")
+
+        # Must contain all PR-topology sections.
+        for section in [
+            "## Current Branch",
+            "## Remote List",
+            "## Commit Graph",
+            "## PR Information",
+            "## Commit History",
+            "## Changed Files Summary",
+            "## Merge Base Info",
+            "## Topology Summary",
+        ]:
+            self.assertIn(section, content, f"Missing section: {section}")
+
+        # Must NOT contain source code or config file sections.
+        self.assertNotIn("## Source Files (task-related)", content)
+        self.assertNotIn("## Configuration Files", content)
+
+    def test_pr_topology_mode_no_source_code(self):
+        """pr-branch-topology mode must NOT include any source file content."""
+        output_path = self.repo_root / "topology_output.md"
+
+        with patch("collect_context.run_git", side_effect=self._fake_run_git):
+            with patch("collect_context.run_gh", side_effect=self._fake_run_gh):
+                with patch("collect_context.Path.cwd", return_value=self.repo_root):
+                    argv = [
+                        "--task", str(self.task_path),
+                        "--output", str(output_path),
+                        "--mode", "pr-branch-topology",
+                    ]
+                    cc.main(argv)
+
+        content = output_path.read_text(encoding="utf-8")
+        self.assertNotIn("## Source Files (task-related)", content)
+        self.assertNotIn("## Source Files", content)
+
+    def test_pr_topology_mode_no_config_files(self):
+        """pr-branch-topology mode must NOT include config file sections."""
+        output_path = self.repo_root / "topology_output.md"
+
+        with patch("collect_context.run_git", side_effect=self._fake_run_git):
+            with patch("collect_context.run_gh", side_effect=self._fake_run_gh):
+                with patch("collect_context.Path.cwd", return_value=self.repo_root):
+                    argv = [
+                        "--task", str(self.task_path),
+                        "--output", str(output_path),
+                        "--mode", "pr-branch-topology",
+                    ]
+                    cc.main(argv)
+
+        content = output_path.read_text(encoding="utf-8")
+        self.assertNotIn("## Configuration Files", content)
+
+    def test_default_mode_preserves_existing_behavior(self):
+        """Run with --mode default and verify it produces all sections that
+        the old (pre-mode) behavior had, including source and config files."""
+        _make_file(self.repo_root, "pyproject.toml", "[project]\nname='test'\n")
+        _make_file(self.repo_root, "src/main.py", "def main():\n    pass\n")
+
+        output_path = self.repo_root / "default_output.md"
+
+        def fake_git(args, cwd):
+            cmd = tuple(args)
+            if cmd == ("status", "--short"):
+                return " M src/main.py\n"
+            elif cmd == ("diff", "--stat"):
+                return " src/main.py | 2 +-\n"
+            elif cmd == ("ls-files",):
+                return "README.md\npyproject.toml\nsrc/main.py\n.git/config\n"
+            return ""
+
+        with patch("collect_context.run_git", side_effect=fake_git):
+            with patch("collect_context.Path.cwd", return_value=self.repo_root):
+                argv = [
+                    "--task", str(self.task_path),
+                    "--output", str(output_path),
+                    "--mode", "default",
+                    "--max-files", "10",
+                    "--max-bytes", "50000",
+                ]
+                cc.main(argv)
+
+        self.assertTrue(output_path.exists())
+        content = output_path.read_text(encoding="utf-8")
+
+        # All legacy sections present.
+        for section in [
+            "# Repository Context",
+            "## Task Description",
+            "## Git Status",
+            "## Git Diff Stat",
+            "## File Tree",
+            "## Configuration Files",
+            "## Source Files (task-related)",
+            "## Context Summary",
+        ]:
+            self.assertIn(section, content, f"Missing section in default mode: {section}")
+
+    def test_pr_topology_output_format(self):
+        """Generate a full output in pr-branch-topology mode and verify the
+        section structure (order, content, and Markdown format)."""
+        output_path = self.repo_root / "topology_output.md"
+
+        with patch("collect_context.run_git", side_effect=self._fake_run_git):
+            with patch("collect_context.run_gh", side_effect=self._fake_run_gh):
+                with patch("collect_context.Path.cwd", return_value=self.repo_root):
+                    argv = [
+                        "--task", str(self.task_path),
+                        "--output", str(output_path),
+                        "--mode", "pr-branch-topology",
+                    ]
+                    cc.main(argv)
+
+        content = output_path.read_text(encoding="utf-8")
+
+        # Exact top-level header.
+        self.assertIn("# PR Branch Topology Context", content)
+
+        # Task description was injected.
+        self.assertIn("## Task Description", content)
+        self.assertIn("PR Topology Analysis", content)
+
+        # Git status carries the mock data.
+        self.assertIn("## Git Status", content)
+        self.assertIn("README.md", content)
+
+        # Current branch.
+        self.assertIn("## Current Branch", content)
+        self.assertIn("feature/test-branch", content)
+
+        # Remote list.
+        self.assertIn("## Remote List", content)
+        self.assertIn("git@github.com:user/myproject.git", content)
+
+        # Commit graph.
+        self.assertIn("## Commit Graph", content)
+        self.assertIn("abc1234 Fix login bug", content)
+
+        # PR Information — list and PR detail.
+        self.assertIn("## PR Information", content)
+        self.assertIn("PR #42", content)
+        self.assertIn("```json", content)
+
+        # Commit history.
+        self.assertIn("## Commit History", content)
+        self.assertIn("abc1234 Fix login bug", content)
+
+        # Changed files summary.
+        self.assertIn("## Changed Files Summary", content)
+
+        # Merge base.
+        self.assertIn("## Merge Base Info", content)
+        self.assertIn("def5678", content)
+
+        # Topology summary footer.
+        self.assertIn("## Topology Summary", content)
+
+        # Verify sections appear in the expected sequential order.
+        ordered_sections = [
+            "# PR Branch Topology Context",
+            "## Task Description",
+            "## Git Status",
+            "## Current Branch",
+            "## Remote List",
+            "## Commit Graph",
+            "## PR Information",
+            "## Commit History",
+            "## Changed Files Summary",
+            "## Merge Base Info",
+            "## Topology Summary",
+        ]
+        last_index = -1
+        for section in ordered_sections:
+            index = content.find(section)
+            self.assertGreater(
+                index, last_index,
+                f"Section '{section}' appears out of order or is missing",
+            )
+            last_index = index
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,13 @@
 #      the relevant test/lint/typecheck commands.
 #   3. All output is logged to .deepseek-forge/check.log via tee -a.
 #   4. Exits with the first non-zero exit code; prints a summary at the end.
+#
+# Environment variables:
+#   DEEPSEEK_FORGE_ARTIFACT_DIR
+#       When set, overrides the directory for check.log (the default is
+#       .deepseek-forge/ in the repo root).  Callers may use this to place
+#       artifacts under a custom path, though the fix loop normally expects
+#       the log inside the target repository.
 
 set -u
 set -o pipefail
@@ -21,7 +28,14 @@ cd "$REPO_ROOT"
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
-LOG_DIR=".deepseek-forge"
+# Default to DEEPSEEK_FORGE_ARTIFACT_DIR; fall back to .deepseek-forge/
+# for backward compatibility with the fix loop (which expects check.log
+# in the repo so deepseek_worker.py --failure-log can find it).
+if [ -n "${DEEPSEEK_FORGE_ARTIFACT_DIR:-}" ]; then
+    LOG_DIR="$DEEPSEEK_FORGE_ARTIFACT_DIR"
+else
+    LOG_DIR=".deepseek-forge"
+fi
 LOG_FILE="$LOG_DIR/check.log"
 
 mkdir -p "$LOG_DIR"
