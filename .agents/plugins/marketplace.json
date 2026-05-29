@@ -8,7 +8,7 @@
       "name": "deepseek-forge",
       "source": {
         "source": "local",
-        "path": "."
+        "path": "./plugins/deepseek-forge"
       },
       "policy": {
         "installation": "AVAILABLE",

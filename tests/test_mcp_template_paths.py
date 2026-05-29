@@ -17,10 +17,17 @@ class TestPluginTemplatePathResolution(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def _make_plugin_layout(self):
-        """Create the flattened plugin layout with tool and template."""
-        tools_dir = os.path.join(self.root, "mcp", "deepseek-mcp", "tools")
+        """Create the marketplace plugin layout with tool and template."""
+        tools_dir = os.path.join(
+            self.root, "plugins", "deepseek-forge", "mcp", "deepseek-mcp", "tools"
+        )
         tmpl_dir = os.path.join(
-            self.root, "skills", "deepseek-forge", "references"
+            self.root,
+            "plugins",
+            "deepseek-forge",
+            "skills",
+            "deepseek-forge",
+            "references",
         )
         os.makedirs(tools_dir)
         os.makedirs(tmpl_dir)
@@ -81,10 +88,12 @@ class TestPluginTemplatePathResolution(unittest.TestCase):
     def test_plugin_layout_correct_number_of_parent_dirs(self):
         """From mcp/deepseek-mcp/tools/, three '..' reaches the plugin root."""
         tools_dir = self._make_plugin_layout()
-        # Simulate: tools_dir = .../mcp/deepseek-mcp/tools
-        # Three levels up = plugin repository root.
+        # Simulate: tools_dir = .../plugins/deepseek-forge/mcp/deepseek-mcp/tools
+        # Three levels up = plugin root.
         plugin_root = os.path.normpath(os.path.join(tools_dir, "..", "..", ".."))
-        expected = os.path.normpath(self.root)
+        expected = os.path.normpath(
+            os.path.join(self.root, "plugins", "deepseek-forge")
+        )
         self.assertEqual(plugin_root, expected,
                          f"Plugin root mismatch: {plugin_root} != {expected}")
 

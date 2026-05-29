@@ -7,7 +7,14 @@ import unittest
 # Add MCP server root to path so we can import the tools package.
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(__file__), "..", "mcp", "deepseek-mcp"),
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "plugins",
+        "deepseek-forge",
+        "mcp",
+        "deepseek-mcp",
+    ),
 )
 
 

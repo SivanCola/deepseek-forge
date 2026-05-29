@@ -1,4 +1,4 @@
-"""Comprehensive unit tests for skills/deepseek-forge/scripts/task_classifier.py.
+"""Comprehensive unit tests for the deepseek-forge task classifier script.
 
 Covers all four task categories, edge cases, mixed signals, case insensitivity,
 bilingual (Chinese/English) input, and garbage/noise rejection.
@@ -15,6 +15,8 @@ from pathlib import Path
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parent.parent
+    / "plugins"
+    / "deepseek-forge"
     / "skills"
     / "deepseek-forge"
     / "scripts"

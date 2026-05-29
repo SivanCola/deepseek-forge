@@ -16,6 +16,8 @@ sys.path.insert(
     os.path.join(
         os.path.dirname(__file__),
         '..',
+        'plugins',
+        'deepseek-forge',
         'skills',
         'deepseek-forge',
         'scripts',

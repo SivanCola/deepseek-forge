@@ -11,7 +11,7 @@ Codex plans and verifies. DeepSeek returns unified diffs. You keep local control
 ![plugin](https://img.shields.io/badge/codex-plugin-24292f)
 ![version](https://img.shields.io/badge/version-v0.1.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.11-3776ab)
-![tests](https://img.shields.io/badge/tests-389%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-391%20passing-2ea44f)
 ![license](https://img.shields.io/badge/license-MIT-6f42c1)
 
 </div>
@@ -27,7 +27,7 @@ codex plugin marketplace add .
 codex plugin add deepseek-forge@deepseek-forge
 ```
 
-If you use the Codex app plugin manager, import the cloned repository root.
+If you use the Codex app plugin manager, import `plugins/deepseek-forge/`.
 
 2. Set your DeepSeek API key:
 
@@ -86,7 +86,7 @@ Only `DEEPSEEK_API_KEY` is required.
 | `DEEPSEEK_MODEL` | No | `deepseek-v4-pro` | Model used for patch generation. |
 | `DEEPSEEK_REASONING_EFFORT` | No | `max` | `high` or `max`. Compatibility values: `low` / `medium` -> `high`, `xhigh` -> `max`. |
 | `DEEPSEEK_ENABLE_1M_CONTEXT` | No | `true` | Enables larger context collection. Set to `false` to reduce cost and latency. |
-| `DEEPSEEK_FORGE_HOME` | No | `skills/deepseek-forge` | Skill root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
+| `DEEPSEEK_FORGE_HOME` | No | `skills/deepseek-forge` inside the installed plugin | Skill root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
 | `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge-{pid}/` | Where runtime artifacts (patches, logs, context files) are written. Set to `.deepseek-forge` to keep artifacts in the target repo. |
 
 With 1M context enabled, context collection defaults to 200 files and 500,000 bytes. With it disabled, defaults are 80 files and 120,000 bytes.
@@ -197,24 +197,32 @@ python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py --patch .deepseek-for
 bash ${DEEPSEEK_FORGE_HOME}/scripts/run_checks.sh
 ```
 
-For repo-internal debugging (e.g., when hacking on deepseek-forge itself), use the skill script path:
+For repo-internal debugging (e.g., when hacking on deepseek-forge itself), use the marketplace plugin path:
 
 ```bash
 mkdir -p .deepseek-forge
 
-python3 skills/deepseek-forge/scripts/collect_context.py \
+python3 plugins/deepseek-forge/skills/deepseek-forge/scripts/collect_context.py \
   --task task.md \
   --output .deepseek-forge/repo_context.md
 
-python3 skills/deepseek-forge/scripts/deepseek_worker.py \
+python3 plugins/deepseek-forge/skills/deepseek-forge/scripts/deepseek_worker.py \
   --model deepseek-v4-pro \
   --task task.md \
   --context .deepseek-forge/repo_context.md \
   --output .deepseek-forge/patch.diff
 
-python3 skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --check
-python3 skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --apply
-bash skills/deepseek-forge/scripts/run_checks.sh
+python3 plugins/deepseek-forge/skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --check
+python3 plugins/deepseek-forge/skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --apply
+bash plugins/deepseek-forge/skills/deepseek-forge/scripts/run_checks.sh
+```
+
+Local plugin installs are copied into Codex's plugin cache. After changing this
+repository, refresh the installed plugin with:
+
+```bash
+codex plugin remove deepseek-forge@deepseek-forge
+codex plugin add deepseek-forge@deepseek-forge
 ```
 
 Advanced debugging environment variables:
@@ -242,7 +250,7 @@ The plugin includes a `deepseek-forge-mcp` server with these tools:
 python3 -m unittest discover -s tests -v
 ```
 
-Current local result: `389 tests, 0 failures`.
+Current local result: `391 tests, 0 failures`.
 
 ## License
 

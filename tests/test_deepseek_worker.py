@@ -22,6 +22,8 @@ sys.path.insert(
     0,
     str(
         Path(__file__).resolve().parent.parent
+        / "plugins"
+        / "deepseek-forge"
         / "skills"
         / "deepseek-forge"
         / "scripts"
