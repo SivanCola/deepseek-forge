@@ -21,7 +21,7 @@ Codex plans and verifies. DeepSeek returns unified diffs. You keep local control
 1. Install the local plugin:
 
 ```bash
-git clone <repo-url>
+git clone git@github.com:SivanCola/deepseek-forge.git
 cd deepseek-forge
 codex plugin install ./deepseek-forge
 ```
