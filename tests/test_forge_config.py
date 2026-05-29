@@ -59,24 +59,37 @@ class TestGetArtifactDir(unittest.TestCase):
     """Tests for :func:`forge_config.get_artifact_dir`."""
 
     def setUp(self) -> None:
-        self._saved = os.environ.get("DEEPSEEK_FORGE_ARTIFACT_DIR")
+        self._saved = {
+            "DEEPSEEK_FORGE_ARTIFACT_DIR": os.environ.get("DEEPSEEK_FORGE_ARTIFACT_DIR"),
+            "DEEPSEEK_FORGE_SESSION_ID": os.environ.get("DEEPSEEK_FORGE_SESSION_ID"),
+        }
 
     def tearDown(self) -> None:
-        if self._saved is not None:
-            os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = self._saved
-        else:
-            os.environ.pop("DEEPSEEK_FORGE_ARTIFACT_DIR", None)
+        for var, value in self._saved.items():
+            if value is not None:
+                os.environ[var] = value
+            else:
+                os.environ.pop(var, None)
 
     def test_default_uses_temp_with_pid(self) -> None:
         """Without the env var, uses /tmp/deepseek-forge-{pid}."""
         os.environ.pop("DEEPSEEK_FORGE_ARTIFACT_DIR", None)
+        os.environ.pop("DEEPSEEK_FORGE_SESSION_ID", None)
         result = forge_config.get_artifact_dir()
         self.assertIn(f"deepseek-forge-{os.getpid()}", str(result))
         self.assertTrue(result.is_absolute())
 
+    def test_session_id_namespaces_default_artifact_dir(self) -> None:
+        """DEEPSEEK_FORGE_SESSION_ID is included in the default artifact path."""
+        os.environ.pop("DEEPSEEK_FORGE_ARTIFACT_DIR", None)
+        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "chat/alpha 1"
+        result = forge_config.get_artifact_dir()
+        self.assertIn(f"deepseek-forge-chat-alpha-1-{os.getpid()}", str(result))
+
     def test_env_var_overrides_default(self) -> None:
         """DEEPSEEK_FORGE_ARTIFACT_DIR env var takes priority."""
         os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = "/tmp/custom-artifacts"
+        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "ignored-session"
         result = forge_config.get_artifact_dir()
         # Path.resolve() can resolve /tmp -> /private/tmp on macOS.
         self.assertIn("custom-artifacts", str(result))
@@ -122,6 +135,68 @@ class TestEnsureArtifactDir(unittest.TestCase):
             self.assertIsInstance(result, Path)
 
 
+class TestRepoLock(unittest.TestCase):
+    """Tests for the per-repository lock helpers."""
+
+    def setUp(self) -> None:
+        self._saved = {
+            "DEEPSEEK_FORGE_LOCK_PATH": os.environ.get("DEEPSEEK_FORGE_LOCK_PATH"),
+            "DEEPSEEK_FORGE_DISABLE_REPO_LOCK": os.environ.get("DEEPSEEK_FORGE_DISABLE_REPO_LOCK"),
+            "DEEPSEEK_FORGE_SESSION_ID": os.environ.get("DEEPSEEK_FORGE_SESSION_ID"),
+        }
+        for var in self._saved:
+            os.environ.pop(var, None)
+
+    def tearDown(self) -> None:
+        for var, value in self._saved.items():
+            if value is not None:
+                os.environ[var] = value
+            else:
+                os.environ.pop(var, None)
+
+    def test_lock_path_falls_back_outside_git(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = forge_config.get_repo_lock_path(tmpdir)
+            self.assertEqual(
+                result,
+                Path(tmpdir).resolve() / ".deepseek-forge" / "deepseek-forge.lock",
+            )
+
+    def test_lock_path_env_overrides_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lock_path = Path(tmpdir) / "custom.lock"
+            os.environ["DEEPSEEK_FORGE_LOCK_PATH"] = str(lock_path)
+            self.assertEqual(forge_config.get_repo_lock_path(tmpdir), lock_path.resolve())
+
+    def test_repo_lock_creates_owner_and_removes_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "session-A"
+            lock_path = forge_config.get_repo_lock_path(tmpdir)
+            with forge_config.repo_lock(tmpdir, reason="unit-test") as held:
+                self.assertEqual(held, lock_path)
+                self.assertTrue(lock_path.is_dir())
+                owner = (lock_path / "owner").read_text(encoding="utf-8")
+                self.assertIn("session=session-A", owner)
+                self.assertIn("reason=unit-test", owner)
+            self.assertFalse(lock_path.exists())
+
+    def test_repo_lock_rejects_concurrent_holder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with forge_config.repo_lock(tmpdir, reason="first"):
+                with self.assertRaises(RuntimeError) as ctx:
+                    with forge_config.repo_lock(tmpdir, reason="second"):
+                        pass
+                self.assertIn("already held", str(ctx.exception))
+
+    def test_repo_lock_can_be_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["DEEPSEEK_FORGE_DISABLE_REPO_LOCK"] = "1"
+            lock_path = forge_config.get_repo_lock_path(tmpdir)
+            with forge_config.repo_lock(tmpdir, reason="disabled") as held:
+                self.assertIsNone(held)
+            self.assertFalse(lock_path.exists())
+
+
 class TestIntegrationImport(unittest.TestCase):
     """Integration: verify that scripts can import and use forge_config."""
 
@@ -137,13 +212,11 @@ class TestIntegrationImport(unittest.TestCase):
         self.assertTrue(hasattr(deepseek_worker, "get_forge_home"),
                         "deepseek_worker should import get_forge_home")
 
-    def test_apply_patch_safe_does_not_depend_on_forge_config(self) -> None:
-        """apply_patch_safe.py should NOT import forge_config (it takes --patch directly)."""
+    def test_apply_patch_safe_imports_repo_lock(self) -> None:
+        """apply_patch_safe.py imports repo_lock for apply-mode concurrency safety."""
         import apply_patch_safe
-        self.assertFalse(hasattr(apply_patch_safe, "get_forge_home"),
-                         "apply_patch_safe should not import get_forge_home")
-        self.assertFalse(hasattr(apply_patch_safe, "get_artifact_dir"),
-                         "apply_patch_safe should not import get_artifact_dir")
+        self.assertTrue(hasattr(apply_patch_safe, "repo_lock"),
+                        "apply_patch_safe should import repo_lock")
 
 
 if __name__ == "__main__":

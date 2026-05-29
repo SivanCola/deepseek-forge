@@ -25,8 +25,7 @@ FIX_TESTS_SCHEMA = {
             },
             "output": {
                 "type": "string",
-                "description": "Path to write the fix patch",
-                "default": ".deepseek-forge/fix.patch.diff",
+                "description": "Path to write the fix patch. Defaults to the deepseek-forge artifact directory.",
             },
         },
         "required": ["task", "context", "failure_log"],
@@ -135,8 +134,8 @@ def handle_fix_tests(arguments: dict) -> dict:
     task = arguments["task"]
     context = arguments["context"]
     failure_log = arguments["failure_log"]
-    output_path = arguments.get(
-        "output", ".deepseek-forge/fix.patch.diff"
+    output_path = arguments.get("output") or config.get_artifact_path(
+        "fix.patch.diff"
     )
 
     # Sanitize sensitive data before sending to API

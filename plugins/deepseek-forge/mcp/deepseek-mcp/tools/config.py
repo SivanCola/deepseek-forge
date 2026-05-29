@@ -2,7 +2,9 @@
 
 import json
 import os
+import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -21,6 +23,38 @@ _REASONING_EFFORT_MAP = {
 
 # Model name patterns that support reasoning_effort parameter
 _REASONING_MODEL_PATTERNS = ("v4-pro", "reasoner")
+
+
+def _sanitize_path_component(value: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip())
+    sanitized = sanitized.strip(".-")
+    return sanitized or "session"
+
+
+def get_session_id() -> str | None:
+    raw = os.environ.get("DEEPSEEK_FORGE_SESSION_ID")
+    if not raw:
+        return None
+    return _sanitize_path_component(raw)
+
+
+def get_artifact_dir() -> str:
+    """Return the artifact directory used by MCP tools."""
+    env = os.environ.get("DEEPSEEK_FORGE_ARTIFACT_DIR")
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+
+    session_id = get_session_id()
+    if session_id:
+        dirname = f"deepseek-forge-{session_id}-{os.getpid()}"
+    else:
+        dirname = f"deepseek-forge-{os.getpid()}"
+    return os.path.join(tempfile.gettempdir(), dirname)
+
+
+def get_artifact_path(filename: str) -> str:
+    """Return a default artifact path for *filename*."""
+    return os.path.join(get_artifact_dir(), filename)
 
 
 def read_template(template_name: str) -> str:
@@ -99,6 +133,8 @@ def get_config():
       - DEEPSEEK_MODEL (default: deepseek-v4-pro)
       - DEEPSEEK_REASONING_EFFORT (default: max)
       - DEEPSEEK_ENABLE_1M_CONTEXT (default: true)
+      - DEEPSEEK_FORGE_ARTIFACT_DIR (optional artifact directory)
+      - DEEPSEEK_FORGE_SESSION_ID (optional default artifact namespace)
 
     Internal defaults (not in user docs):
       - endpoint, temperature, timeout

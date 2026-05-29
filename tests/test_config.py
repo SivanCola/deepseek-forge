@@ -23,8 +23,14 @@ class TestConfigReading(unittest.TestCase):
 
     def setUp(self):
         self._saved = {}
-        for var in ("DEEPSEEK_API_KEY", "DEEPSEEK_MODEL", "DEEPSEEK_REASONING_EFFORT",
-                     "DEEPSEEK_ENABLE_1M_CONTEXT"):
+        for var in (
+            "DEEPSEEK_API_KEY",
+            "DEEPSEEK_MODEL",
+            "DEEPSEEK_REASONING_EFFORT",
+            "DEEPSEEK_ENABLE_1M_CONTEXT",
+            "DEEPSEEK_FORGE_ARTIFACT_DIR",
+            "DEEPSEEK_FORGE_SESSION_ID",
+        ):
             self._saved[var] = os.environ.get(var)
             os.environ.pop(var, None)
 
@@ -146,6 +152,26 @@ class TestConfigReading(unittest.TestCase):
         config = self._import_config()
         cfg = config.get_config()
         self.assertEqual(cfg["timeout"], 120)
+
+    def test_artifact_dir_default_uses_pid(self):
+        config = self._import_config()
+        path = config.get_artifact_dir()
+        self.assertIn(f"deepseek-forge-{os.getpid()}", path)
+
+    def test_artifact_dir_uses_session_id(self):
+        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "chat/beta 2"
+        config = self._import_config()
+        path = config.get_artifact_dir()
+        self.assertIn(f"deepseek-forge-chat-beta-2-{os.getpid()}", path)
+
+    def test_artifact_path_uses_artifact_dir_override(self):
+        os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = "/tmp/deepseek-custom"
+        config = self._import_config()
+        self.assertTrue(
+            config.get_artifact_path("patch.diff").endswith(
+                "/deepseek-custom/patch.diff"
+            )
+        )
 
 
 class TestBuildRequestBody(unittest.TestCase):

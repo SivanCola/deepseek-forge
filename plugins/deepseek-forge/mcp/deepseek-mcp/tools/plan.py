@@ -2,6 +2,8 @@
 
 import os
 
+from . import config
+
 PLAN_SCHEMA = {
     "description": "Generate a structured implementation plan for a coding task",
     "inputSchema": {
@@ -13,8 +15,7 @@ PLAN_SCHEMA = {
             },
             "output": {
                 "type": "string",
-                "description": "Path to write the plan file",
-                "default": ".deepseek-forge/plan.md",
+                "description": "Path to write the plan file. Defaults to the deepseek-forge artifact directory.",
             },
         },
         "required": ["task"],
@@ -44,7 +45,7 @@ PLAN_TEMPLATE = """# Implementation Plan
 
 def handle_plan(arguments: dict) -> dict:
     task = arguments["task"]
-    output_path = arguments.get("output", ".deepseek-forge/plan.md")
+    output_path = arguments.get("output") or config.get_artifact_path("plan.md")
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 

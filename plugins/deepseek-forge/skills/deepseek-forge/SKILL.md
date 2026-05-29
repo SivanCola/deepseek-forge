@@ -177,6 +177,21 @@ These constraints are non-negotiable and apply to every interaction:
 - **Codex is the sole executor.** Only Codex applies patches, runs commands, modifies the repository, and commits.
 - **All patches MUST pass `apply_patch_safe.py --check` before any application.** No exceptions.
 - **No git commit happens automatically.** Codex makes the final decision on whether and when to commit.
+- **Concurrent write operations are locked.** `apply_patch_safe.py --apply` and `run_checks.sh` acquire the repository lock (`.git/deepseek-forge.lock` by default). If the lock is held, stop and tell the user another session is active instead of bypassing it.
+
+## Concurrent Sessions
+
+Multiple Codex conversations may use the installed plugin at the same time.
+Different repositories or different git worktrees are safe by default. For the
+same worktree, use the repository lock and keep artifacts separated:
+
+```bash
+export DEEPSEEK_FORGE_SESSION_ID="codex-$(date +%Y%m%d-%H%M%S)"
+```
+
+If the user explicitly sets `DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge`, warn
+that multiple conversations in the same worktree may overwrite artifact files
+unless they use different subdirectories.
 
 ---
 
@@ -254,7 +269,7 @@ python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py \
 bash ${DEEPSEEK_FORGE_HOME}/scripts/run_checks.sh
 ```
 
-**Note:** Runtime artifacts are written to ``DEEPSEEK_FORGE_ARTIFACT_DIR`` (defaults to ``/tmp/deepseek-forge-{pid}/``). To keep artifacts in the target repo, set ``DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge``. If using ``.deepseek-forge/`` as the artifact directory, consider adding it to ``.git/info/exclude``:
+**Note:** Runtime artifacts are written to ``DEEPSEEK_FORGE_ARTIFACT_DIR`` (defaults to ``/tmp/deepseek-forge-{pid}/``, or ``/tmp/deepseek-forge-{session}-{pid}/`` when ``DEEPSEEK_FORGE_SESSION_ID`` is set). To keep artifacts in the target repo, set ``DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge``. If using ``.deepseek-forge/`` as the artifact directory, consider adding it to ``.git/info/exclude``:
 
 ```bash
 echo '.deepseek-forge/' >> .git/info/exclude

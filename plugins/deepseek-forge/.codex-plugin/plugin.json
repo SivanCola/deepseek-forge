@@ -1,6 +1,6 @@
 {
   "name": "deepseek-forge",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Orchestrates Codex planning with DeepSeek implementation. Codex plans the work, DeepSeek generates unified diff patches, Codex reviews and applies them safely.",
   "author": {
     "name": "deepseek-forge"

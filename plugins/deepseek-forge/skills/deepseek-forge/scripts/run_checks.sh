@@ -6,7 +6,7 @@
 #   1. If CHECK_COMMANDS is set, execute those commands directly.
 #   2. Otherwise, detect project type (Node, Python, Go, Rust, Make) and run
 #      the relevant test/lint/typecheck commands.
-#   3. All output is logged to .deepseek-forge/check.log via tee -a.
+#   3. All output is logged to {artifact_dir}/check.log via tee -a.
 #   4. Exits with the first non-zero exit code; prints a summary at the end.
 #
 # Environment variables:
@@ -15,6 +15,10 @@
 #       .deepseek-forge/ in the repo root).  Callers may use this to place
 #       artifacts under a custom path, though the fix loop normally expects
 #       the log inside the target repository.
+#   DEEPSEEK_FORGE_LOCK_PATH
+#       Optional path to the repository lock directory.
+#   DEEPSEEK_FORGE_DISABLE_REPO_LOCK
+#       Set to 1 to disable the repository lock.
 
 set -u
 set -o pipefail
@@ -24,6 +28,51 @@ set -o pipefail
 # ---------------------------------------------------------------------------
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
+
+# ---------------------------------------------------------------------------
+# Repository lock
+# ---------------------------------------------------------------------------
+LOCK_HELD=false
+release_repo_lock() {
+    if ${LOCK_HELD}; then
+        rm -rf "$LOCK_DIR" 2>/dev/null || true
+        LOCK_HELD=false
+    fi
+}
+
+if [ "${DEEPSEEK_FORGE_DISABLE_REPO_LOCK:-0}" != "1" ]; then
+    if [ -n "${DEEPSEEK_FORGE_LOCK_PATH:-}" ]; then
+        LOCK_DIR="$DEEPSEEK_FORGE_LOCK_PATH"
+    else
+        GIT_DIR="$(git rev-parse --git-dir 2>/dev/null || true)"
+        if [ -n "$GIT_DIR" ]; then
+            case "$GIT_DIR" in
+                /*) LOCK_DIR="$GIT_DIR/deepseek-forge.lock" ;;
+                *) LOCK_DIR="$REPO_ROOT/$GIT_DIR/deepseek-forge.lock" ;;
+            esac
+        else
+            LOCK_DIR="$REPO_ROOT/.deepseek-forge/deepseek-forge.lock"
+        fi
+    fi
+
+    mkdir -p "$(dirname "$LOCK_DIR")"
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        LOCK_HELD=true
+        {
+            echo "pid=$$"
+            echo "session=${DEEPSEEK_FORGE_SESSION_ID:-}"
+            echo "reason=run_checks.sh"
+        } > "$LOCK_DIR/owner"
+    else
+        echo "ERROR: deepseek-forge repository lock is already held at $LOCK_DIR" >&2
+        if [ -f "$LOCK_DIR/owner" ]; then
+            cat "$LOCK_DIR/owner" >&2
+        fi
+        echo "Use a separate git worktree, wait for the other session, or set DEEPSEEK_FORGE_DISABLE_REPO_LOCK=1 if you are sure it is safe." >&2
+        exit 1
+    fi
+fi
+trap release_repo_lock EXIT
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -58,6 +107,7 @@ cleanup() {
             rm -f "$f" 2>/dev/null || true
         done
     fi
+    release_repo_lock
 }
 trap cleanup EXIT
 

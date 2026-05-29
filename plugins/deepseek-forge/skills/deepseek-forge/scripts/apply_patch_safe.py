@@ -19,6 +19,8 @@ import re
 import subprocess
 import sys
 
+from forge_config import repo_lock
+
 
 # ---------------------------------------------------------------------------
 # Patch file parsing helpers
@@ -287,21 +289,29 @@ def main() -> None:
     file_paths = extract_file_paths(patch_content)
     print(f"Would apply to: {', '.join(file_paths)}")
 
-    # 4. Dry-run validation via git
-    ok, msg = git_apply_check(patch_content)
-    if not ok:
-        print(f"ERROR: git apply --check failed: {msg}")
-        sys.exit(1)
-
     # 5. Check mode – stop here
     if args.check:
+        ok, msg = git_apply_check(patch_content)
+        if not ok:
+            print(f"ERROR: git apply --check failed: {msg}")
+            sys.exit(1)
         print("CHECK PASSED: Patch is safe to apply")
         sys.exit(0)
 
     # 6. Apply mode – apply the patch for real
-    ok, msg = git_apply(patch_content)
-    if not ok:
-        print(f"ERROR: git apply failed: {msg}")
+    try:
+        with repo_lock(reason="apply_patch_safe --apply"):
+            ok, msg = git_apply_check(patch_content)
+            if not ok:
+                print(f"ERROR: git apply --check failed: {msg}")
+                sys.exit(1)
+
+            ok, msg = git_apply(patch_content)
+            if not ok:
+                print(f"ERROR: git apply failed: {msg}")
+                sys.exit(1)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
         sys.exit(1)
 
     # 7. Report success

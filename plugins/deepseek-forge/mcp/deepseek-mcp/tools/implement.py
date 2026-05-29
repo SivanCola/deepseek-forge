@@ -24,8 +24,7 @@ IMPLEMENT_SCHEMA = {
             },
             "output": {
                 "type": "string",
-                "description": "Path to write the patch file",
-                "default": ".deepseek-forge/patch.diff",
+                "description": "Path to write the patch file. Defaults to the deepseek-forge artifact directory.",
             },
         },
         "required": ["task", "context"],
@@ -116,7 +115,7 @@ def handle_implement(arguments: dict) -> dict:
     task = arguments["task"]
     context = arguments["context"]
     plan = arguments.get("plan", "")
-    output_path = arguments.get("output", ".deepseek-forge/patch.diff")
+    output_path = arguments.get("output") or config.get_artifact_path("patch.diff")
 
     system_prompt = config.read_template("implement_patch")
 

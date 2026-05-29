@@ -26,6 +26,7 @@ Usage:
 
     ``--output`` is optional.  The default is ``{artifact_dir}/patch.diff``
     (or ``{artifact_dir}/fix.patch.diff`` when ``--template fix_tests``),
+    where the default artifact directory can include ``DEEPSEEK_FORGE_SESSION_ID``.
     where ``artifact_dir`` is resolved via :func:`forge_config.get_artifact_dir`.
 
     After extracting the patch, the script runs lightweight

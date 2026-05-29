@@ -605,7 +605,7 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Path where the generated Markdown file will be written "
              "(default: $DEEPSEEK_FORGE_ARTIFACT_DIR/repo_context.md or "
-             "/tmp/deepseek-forge-{pid}/repo_context.md).",
+             "/tmp/deepseek-forge-{session?}-{pid}/repo_context.md).",
     )
     parser.add_argument(
         "--mode",

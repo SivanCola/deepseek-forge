@@ -9,9 +9,9 @@ Codex plans and verifies. DeepSeek returns unified diffs. You keep local control
 <strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a>
 
 ![plugin](https://img.shields.io/badge/codex-plugin-24292f)
-![version](https://img.shields.io/badge/version-v0.1.2-blue)
+![version](https://img.shields.io/badge/version-v0.2.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.11-3776ab)
-![tests](https://img.shields.io/badge/tests-393%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-403%20passing-2ea44f)
 ![license](https://img.shields.io/badge/license-MIT-6f42c1)
 
 </div>
@@ -37,6 +37,7 @@ Write the settings to `~/.zshrc`:
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.zshrc
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.zshrc
 echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.zshrc
+echo 'export DEEPSEEK_ENABLE_1M_CONTEXT="true"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -46,6 +47,7 @@ Or write the same settings to `~/.profile`:
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.profile
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.profile
 echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.profile
+echo 'export DEEPSEEK_ENABLE_1M_CONTEXT="true"' >> ~/.profile
 source ~/.profile
 ```
 
@@ -87,7 +89,10 @@ Only `DEEPSEEK_API_KEY` is required.
 | `DEEPSEEK_REASONING_EFFORT` | No | `max` | `high` or `max`. Compatibility values: `low` / `medium` -> `high`, `xhigh` -> `max`. |
 | `DEEPSEEK_ENABLE_1M_CONTEXT` | No | `true` | Enables larger context collection. Set to `false` to reduce cost and latency. |
 | `DEEPSEEK_FORGE_HOME` | No | `skills/deepseek-forge` in the installed plugin | Skill root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
-| `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge-{pid}/` | Where runtime artifacts (patches, logs, context files) are written. Set to `.deepseek-forge` to keep artifacts in the target repo. |
+| `DEEPSEEK_FORGE_SESSION_ID` | No | none | Optional per-conversation namespace for default artifact paths. |
+| `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge-{pid}/` or `/tmp/deepseek-forge-{session}-{pid}/` | Where runtime artifacts (patches, logs, context files) are written. Set to `.deepseek-forge` to keep artifacts in the target repo. |
+| `DEEPSEEK_FORGE_LOCK_PATH` | No | `.git/deepseek-forge.lock` | Per-repository lock directory used by apply/check operations. |
+| `DEEPSEEK_FORGE_DISABLE_REPO_LOCK` | No | unset | Set to `1` only when you intentionally want to bypass the repository lock. |
 
 With 1M context enabled, context collection defaults to 200 files and 500,000 bytes. With it disabled, defaults are 80 files and 120,000 bytes.
 
@@ -157,7 +162,19 @@ python3 ${DEEPSEEK_FORGE_HOME}/scripts/branch_surgery.py \
 
 ## Files Created
 
-Runtime files are written under `DEEPSEEK_FORGE_ARTIFACT_DIR` — which defaults to `/tmp/deepseek-forge-{pid}/`. Set `DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge` to keep artifacts in the target repository, or set it to any custom path.
+Runtime files are written under `DEEPSEEK_FORGE_ARTIFACT_DIR` — which defaults to `/tmp/deepseek-forge-{pid}/`, or `/tmp/deepseek-forge-{session}-{pid}/` when `DEEPSEEK_FORGE_SESSION_ID` is set. Set `DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge` to keep artifacts in the target repository, or set it to any custom path.
+
+## Concurrent Use
+
+Multiple Codex conversations can use the installed plugin at the same time. For different repositories or different git worktrees, no special setup is usually needed.
+
+For the same repository worktree, deepseek-forge protects write-sensitive operations with a repository lock. By default the lock is `.git/deepseek-forge.lock`; outside Git it falls back to `.deepseek-forge/deepseek-forge.lock`. `apply_patch_safe.py --apply` and `run_checks.sh` acquire this lock so concurrent sessions do not apply patches or overwrite check logs at the same time.
+
+For clearer artifact separation across conversations, set a per-session id:
+
+```bash
+export DEEPSEEK_FORGE_SESSION_ID="codex-$(date +%Y%m%d-%H%M%S)"
+```
 
 If using `.deepseek-forge/` as the artifact directory, consider adding it to `.git/info/exclude` to keep it out of version control:
 
@@ -257,7 +274,7 @@ CODEX_HOME="$tmp_home" scripts/reinstall-local-plugin.sh
 rm -rf "$tmp_home"
 ```
 
-Current local result: `393 tests, 0 failures`.
+Current local result: `403 tests, 0 failures`.
 
 ## License
 

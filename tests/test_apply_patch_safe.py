@@ -608,6 +608,25 @@ class TestMainIntegration(unittest.TestCase):
             mock_git_check.assert_called_once()
             mock_git_apply.assert_called_once()
 
+    @patch('apply_patch_safe.repo_lock')
+    @patch('apply_patch_safe.git_apply')
+    @patch('apply_patch_safe.git_apply_check')
+    @patch('apply_patch_safe.parse_patch_file')
+    def test_main_apply_lock_failure_exits_one(self, mock_parse,
+                                               mock_git_check, mock_git_apply,
+                                               mock_repo_lock):
+        """Apply mode should stop if another session holds the repo lock."""
+        mock_parse.return_value = self._valid_diff()
+        mock_repo_lock.side_effect = RuntimeError("lock is held")
+
+        test_args = ['prog', '--patch', 'patch.diff', '--apply']
+        with patch.object(sys, 'argv', test_args):
+            with self.assertRaises(SystemExit) as cm:
+                apply_patch_safe.main()
+            self.assertEqual(cm.exception.code, 1)
+            mock_git_check.assert_not_called()
+            mock_git_apply.assert_not_called()
+
     # -- file-not-found ----------------------------------------------------
 
     @patch('apply_patch_safe.parse_patch_file',
