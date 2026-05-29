@@ -1,4 +1,4 @@
-"""Comprehensive unit tests for the deepseek-forge task classifier script.
+"""Comprehensive unit tests for the deepseek-forge task classifier.
 
 Covers all four task categories, edge cases, mixed signals, case insensitivity,
 bilingual (Chinese/English) input, and garbage/noise rejection.

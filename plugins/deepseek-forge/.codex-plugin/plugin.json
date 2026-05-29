@@ -1,6 +1,6 @@
 {
   "name": "deepseek-forge",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Orchestrates Codex planning with DeepSeek implementation. Codex plans the work, DeepSeek generates unified diff patches, Codex reviews and applies them safely.",
   "author": {
     "name": "deepseek-forge"
@@ -9,11 +9,18 @@
   "mcpServers": ".mcp.json",
   "interface": {
     "displayName": "DeepSeek Forge",
-    "shortDescription": "Codex plans, DeepSeek codes, you review — safe patch-based code generation with automated fix loops.",
-    "longDescription": "DeepSeek Forge is a disciplined pipeline that turns task descriptions into reviewed, tested, and applied code patches. Codex acts as the architect and gatekeeper — it plans the work, collects context, validates patches, applies changes, runs checks, and decides whether to commit. DeepSeek is a sandboxed patch generator that receives structured prompts and returns only unified diffs. Every patch passes through multi-layer safety validation before touching the working tree. A built-in fix loop automatically retries failed patches up to 3 times by feeding failure logs back to DeepSeek.",
+    "shortDescription": "Codex plans, DeepSeek codes, you review — safe patch generation plus dry-run PR branch surgery.",
+    "longDescription": "DeepSeek Forge is a disciplined pipeline for reviewed code patches and PR branch topology repair. Codex acts as the architect and gatekeeper: it plans the work, collects context, validates patches, applies changes, runs checks, and decides whether to commit. DeepSeek is a sandboxed patch generator that receives structured prompts and returns only unified diffs. For PR topology tasks, local scripts collect lightweight GitHub metadata and generate dry-run branch surgery plans with force-with-lease commands, verification steps, and rollback notes. Every output passes through safety validation before touching the working tree.",
     "developerName": "deepseek-forge",
     "category": "Developer Tools",
-    "defaultPrompt": "Use the deepseek-forge skill to orchestrate Codex planning with DeepSeek code generation. Codex plans the work, DeepSeek generates unified diff patches, Codex reviews and applies them safely.",
-    "capabilities": ["plan", "implement", "fix", "review"]
+    "defaultPrompt": "Use the deepseek-forge skill to orchestrate Codex planning with DeepSeek code generation or PR branch topology repair. Codex plans the work, DeepSeek generates unified diff patches when needed, and Codex reviews and applies changes safely.",
+    "capabilities": [
+      "plan",
+      "implement",
+      "fix",
+      "review",
+      "branch-surgery",
+      "pr-topology"
+    ]
   }
 }
