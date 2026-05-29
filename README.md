@@ -2,7 +2,7 @@
 
 # deepseek-forge
 
-**Let Codex use DeepSeek as a safe patch generator.**
+**Let Codex use DeepSeek as a safe patch generator and forward-development engine.**
 
 Codex plans and verifies. DeepSeek returns unified diffs. You keep local control.
 
@@ -102,17 +102,24 @@ Only `DEEPSEEK_API_KEY` is required.
 | `DEEPSEEK_ENABLE_1M_CONTEXT` | No | `true` | Enables larger context collection. Set to `false` to reduce cost and latency. |
 | `DEEPSEEK_FORGE_HOME` | No | `skills/deepseek-forge` in the installed plugin | Skill root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
 | `DEEPSEEK_FORGE_SESSION_ID` | No | none | Optional per-conversation namespace for default artifact paths. |
-| `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge-{pid}/` or `/tmp/deepseek-forge-{session}-{pid}/` | Where runtime artifacts (patches, logs, context files) are written. Set to `.deepseek-forge` to keep artifacts in the target repo. |
+| `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge/` | Base path for runtime artifacts. Thread/run subdirectories are auto-appended for isolation. Set to `.deepseek-forge` to keep artifacts in the target repo. |
 | `DEEPSEEK_FORGE_LOCK_PATH` | No | `.git/deepseek-forge.lock` | Per-repository lock directory used by apply/check operations. |
 | `DEEPSEEK_FORGE_DISABLE_REPO_LOCK` | No | unset | Set to `1` only when you intentionally want to bypass the repository lock. |
+| `DEEPSEEK_FORGE_RUN_ID` | No | auto-generated | Override the run-id component of the artifact path. |
+| `DEEPSEEK_FORGE_MAX_LOOPS` | No | `5` | Maximum forward-development loop iterations. |
+| `DEEPSEEK_FORGE_MAX_PARALLEL_AGENTS` | No | `3` | Max parallel DeepSeek sub-agents per loop. |
+| `DEEPSEEK_FORGE_REPO_LOCAL_ARTIFACTS` | No | `false` | When `true`, write loop artifacts to `.deepseek-forge/` in the repo. |
+| `CODEX_THREAD_ID` | No | auto-detected | Set by Codex to isolate concurrent conversations. |
 
 With 1M context enabled, context collection defaults to 200 files and 500,000 bytes. With it disabled, defaults are 80 files and 120,000 bytes.
 
 ## What Happens
 
+For single-patch tasks (bug fixes, small features):
+
 ```text
 1. Codex writes a plan.
-2. Codex classifies the task (patch, patch review, PR branch topology).
+2. Codex classifies the task (forward dev, patch, patch review, PR branch topology).
 3. Codex collects repository context (full source or lightweight metadata, per mode).
 4. For patch tasks, DeepSeek returns a unified diff. For topology tasks, local scripts generate a dry-run branch split plan.
 5. Codex validates and reviews the output.
@@ -121,7 +128,58 @@ With 1M context enabled, context collection defaults to 200 files and 500,000 by
 8. If checks fail, Codex sends sanitized logs to DeepSeek for a fix patch.
 ```
 
-DeepSeek never runs commands, edits files, applies patches, or commits code. It only returns text diffs.
+For forward development tasks (building features from scratch):
+
+```text
+1. DeepSeek expands the task into acceptance criteria, plan, and todos.
+2. DeepSeek generates implementation patches for pending todos (parallel).
+3. DeepSeek reviews each candidate patch.
+4. Codex validates and applies approved patches.
+5. Codex runs checks; failures are recorded in bugs.md and state.json.
+6. DeepSeek generates fix patches for open bugs.
+7. Codex applies fixes and re-checks.
+8. DeepSeek performs final acceptance review against criteria.
+9. Loop continues until all todos done or max loops reached.
+```
+
+DeepSeek never runs commands, edits files, applies patches, or commits code. It only returns text diffs and JSON reports.
+
+## Forward Development Loop
+
+For building features from scratch with acceptance criteria, use the
+forward development loop:
+
+```bash
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/dev_loop.py \
+  --task task.md \
+  --model deepseek-v4-pro
+
+# Resume from a saved state
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/dev_loop.py \
+  --task task.md \
+  --resume
+```
+
+The loop generates `acceptance.md`, `plan.md`, `todo.md`, `bugs.md`, and
+`state.json` in the isolated artifact directory. Codex remains the sole
+executor — DeepSeek only produces diffs and JSON assessments.
+
+### Anti-Oscillation
+
+- Max 5 loop iterations (configurable via `DEEPSEEK_FORGE_MAX_LOOPS`).
+- Same failure signature 2× stops the loop.
+- Patch >8 files or >500 lines stops and requests todo splitting.
+
+### Multi-Agent (v1)
+
+Parallel DeepSeek API calls play different sub-roles per loop iteration:
+
+| Sub-role | Template | Output |
+|---|---|---|
+| `implementer` | `implement_todo` | Unified diff |
+| `reviewer` | `review_candidate_patch` | JSON review |
+| `tester` | `write_tests_for_todo` | Unified diff |
+| `fixer` | `fix_open_bugs` | Unified diff |
 
 ## Patch Review
 
@@ -174,7 +232,15 @@ python3 ${DEEPSEEK_FORGE_HOME}/scripts/branch_surgery.py \
 
 ## Files Created
 
-Runtime files are written under `DEEPSEEK_FORGE_ARTIFACT_DIR` — which defaults to `/tmp/deepseek-forge-{pid}/`, or `/tmp/deepseek-forge-{session}-{pid}/` when `DEEPSEEK_FORGE_SESSION_ID` is set. Set `DEEPSEEK_FORGE_ARTIFACT_DIR=.deepseek-forge` to keep artifacts in the target repository, or set it to any custom path.
+Runtime files are written to an isolated artifact directory. The default path is:
+
+```text
+/tmp/deepseek-forge/{repo_hash}/{CODEX_THREAD_ID}/{run_id}/
+```
+
+This isolates artifacts across different repositories and Codex conversations.
+Set `DEEPSEEK_FORGE_ARTIFACT_DIR` to override the base path.
+Set `DEEPSEEK_FORGE_REPO_LOCAL_ARTIFACTS=true` to use `.deepseek-forge/` instead.
 
 ## Concurrent Use
 
@@ -197,10 +263,15 @@ echo '.deepseek-forge/' >> .git/info/exclude
 | File | Purpose |
 |---|---|
 | `plan.md` | Codex implementation plan. |
+| `acceptance.md` | Human-readable acceptance criteria (forward dev). |
+| `todo.md` | Todo list with status (forward dev). |
+| `bugs.md` | Open bugs (forward dev, written by Codex/check results). |
+| `state.json` | Machine-readable loop state (forward dev). |
 | `repo_context.md` | Context sent to DeepSeek. |
 | `patch.diff` | Primary patch. |
-| `fix.patch.diff` | Patch generated after failed checks. |
-| `check.log` | Test, lint, and typecheck output. |
+| `patch_{todo_id}_{loop}.diff` | Per-todo patches (forward dev). |
+| `fix.patch.diff` / `fix_{loop}.diff` | Patch generated after failed checks. |
+| `check.log` / `check_{loop}.log` | Test, lint, and typecheck output. |
 
 ## Optional Manual Debugging
 
@@ -264,6 +335,12 @@ The plugin includes a `deepseek-forge-mcp` server with these tools:
 | `deepseek.fix_tests` | Generate a fix patch from failure logs. |
 | `deepseek.review_patch` | Review a patch. |
 | `deepseek.explain_patch` | Explain a patch. |
+| `deepseek.expand_plan` | Expand a task into acceptance criteria, plan, and todos. |
+| `deepseek.implement_todo` | Generate a patch for a specific todo item. |
+| `deepseek.review_candidate_patch` | Review a candidate implementation patch. |
+| `deepseek.write_tests_for_todo` | Write tests for a todo item. |
+| `deepseek.fix_open_bugs` | Generate a fix patch for open bugs. |
+| `deepseek.final_acceptance_review` | Final assessment against acceptance criteria. |
 
 ## Verify This Repository
 

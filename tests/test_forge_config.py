@@ -71,23 +71,18 @@ class TestGetArtifactDir(unittest.TestCase):
             else:
                 os.environ.pop(var, None)
 
-    def test_default_uses_temp_with_pid(self) -> None:
-        """Without the env var, uses /tmp/deepseek-forge-{pid}."""
+    def test_default_uses_temp_with_artifact_prefix(self) -> None:
+        """Without the env var, uses /tmp/deepseek-forge/ with isolation subdirs."""
         os.environ.pop("DEEPSEEK_FORGE_ARTIFACT_DIR", None)
         os.environ.pop("DEEPSEEK_FORGE_SESSION_ID", None)
         result = forge_config.get_artifact_dir()
-        self.assertIn(f"deepseek-forge-{os.getpid()}", str(result))
+        self.assertIn("deepseek-forge", str(result))
         self.assertTrue(result.is_absolute())
 
-    def test_session_id_namespaces_default_artifact_dir(self) -> None:
-        """DEEPSEEK_FORGE_SESSION_ID is included in the default artifact path."""
-        os.environ.pop("DEEPSEEK_FORGE_ARTIFACT_DIR", None)
-        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "chat/alpha 1"
-        result = forge_config.get_artifact_dir()
-        self.assertIn(f"deepseek-forge-chat-alpha-1-{os.getpid()}", str(result))
-
-    def test_env_var_overrides_default(self) -> None:
-        """DEEPSEEK_FORGE_ARTIFACT_DIR env var takes priority."""
+    def test_env_var_overrides_base_but_appends_isolation_subdirs(self) -> None:
+        """DEEPSEEK_FORGE_ARTIFACT_DIR env var sets the base, isolation subdirs are appended."""
+        if "DEEPSEEK_FORGE_RUN_ID" not in os.environ:
+            os.environ["DEEPSEEK_FORGE_RUN_ID"] = "test-run"
         os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = "/tmp/custom-artifacts"
         os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "ignored-session"
         result = forge_config.get_artifact_dir()
@@ -109,23 +104,27 @@ class TestEnsureArtifactDir(unittest.TestCase):
 
     def test_creates_directory_if_not_exists(self) -> None:
         """ensure_artifact_dir creates the directory when it does not exist."""
+        if "DEEPSEEK_FORGE_RUN_ID" not in os.environ:
+            os.environ["DEEPSEEK_FORGE_RUN_ID"] = "test-run-create"
         with tempfile.TemporaryDirectory() as tmpdir:
-            artifact_dir = Path(tmpdir) / "nonexistent" / "subdir"
+            artifact_dir = Path(tmpdir) / "nonexistent"
             os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = str(artifact_dir)
             result = forge_config.ensure_artifact_dir()
             # Path.resolve() can resolve /var -> /private/var on macOS.
             self.assertIn("nonexistent", str(result))
-            self.assertIn("subdir", str(result))
             self.assertTrue(result.is_dir())
 
     def test_noop_when_directory_exists(self) -> None:
         """ensure_artifact_dir is a no-op when the directory already exists."""
+        if "DEEPSEEK_FORGE_RUN_ID" not in os.environ:
+            os.environ["DEEPSEEK_FORGE_RUN_ID"] = "test-run-noop"
         with tempfile.TemporaryDirectory() as tmpdir:
             os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = tmpdir
             result = forge_config.ensure_artifact_dir()
             self.assertTrue(result.is_dir())
-            # The resolved path should end with the temp dir basename.
-            self.assertEqual(result.name, Path(tmpdir).name)
+            # The artifact dir now appends isolation subdirs, so the parent chain
+            # should contain the tmpdir component.
+            self.assertIn(Path(tmpdir).name, [p.name for p in result.parents])
 
     def test_returns_path_instance(self) -> None:
         """The return value is a pathlib.Path."""

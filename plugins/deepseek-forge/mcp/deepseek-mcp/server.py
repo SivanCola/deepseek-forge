@@ -15,6 +15,21 @@ from tools.review_patch import (
     handle_explain_patch,
     EXPLAIN_SCHEMA,
 )
+from tools.expand_plan import handle_expand_plan, EXPAND_PLAN_SCHEMA
+from tools.implement_todo import handle_implement_todo, IMPLEMENT_TODO_SCHEMA
+from tools.review_candidate_patch import (
+    handle_review_candidate_patch,
+    REVIEW_CANDIDATE_SCHEMA,
+)
+from tools.write_tests_for_todo import (
+    handle_write_tests_for_todo,
+    WRITE_TESTS_SCHEMA,
+)
+from tools.fix_open_bugs import handle_fix_open_bugs, FIX_OPEN_BUGS_SCHEMA
+from tools.final_acceptance_review import (
+    handle_final_acceptance_review,
+    FINAL_ACCEPTANCE_REVIEW_SCHEMA,
+)
 
 TOOLS = {
     "deepseek.plan": {"handler": handle_plan, "schema": PLAN_SCHEMA},
@@ -28,11 +43,35 @@ TOOLS = {
         "handler": handle_explain_patch,
         "schema": EXPLAIN_SCHEMA,
     },
+    "deepseek.expand_plan": {
+        "handler": handle_expand_plan,
+        "schema": EXPAND_PLAN_SCHEMA,
+    },
+    "deepseek.implement_todo": {
+        "handler": handle_implement_todo,
+        "schema": IMPLEMENT_TODO_SCHEMA,
+    },
+    "deepseek.review_candidate_patch": {
+        "handler": handle_review_candidate_patch,
+        "schema": REVIEW_CANDIDATE_SCHEMA,
+    },
+    "deepseek.write_tests_for_todo": {
+        "handler": handle_write_tests_for_todo,
+        "schema": WRITE_TESTS_SCHEMA,
+    },
+    "deepseek.fix_open_bugs": {
+        "handler": handle_fix_open_bugs,
+        "schema": FIX_OPEN_BUGS_SCHEMA,
+    },
+    "deepseek.final_acceptance_review": {
+        "handler": handle_final_acceptance_review,
+        "schema": FINAL_ACCEPTANCE_REVIEW_SCHEMA,
+    },
 }
 
 SERVER_INFO = {
     "name": "deepseek-forge-mcp",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "protocolVersion": "2024-11-05",
 }
 

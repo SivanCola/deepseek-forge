@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Task classification layer for deepseek-forge.
 
-Classifies task descriptions into one of four categories using keyword-based
+Classifies task descriptions into one of five categories using keyword-based
 heuristic matching.  Supports bilingual (English / Chinese) task descriptions.
 
 Categories
 ----------
+- ``forward_development_task`` — Task requires a full forward development loop
+                                (acceptance criteria, plan, todos, implement,
+                                review, fix, verify).
 - ``patch_task``            — Task requires generating/implementing code changes.
 - ``patch_review_task``     — Task requires reviewing an existing patch.
 - ``pr_branch_topology_task`` — Task involves PR branch governance (force push,
@@ -30,6 +33,40 @@ from typing import Any
 # Multi-word keywords are matched as substrings of the lowercased task text.
 
 _CATEGORY_KEYWORDS: dict[str, list[tuple[str, int]]] = {
+    "forward_development_task": [
+        # English — strong signals for the full forward-dev loop
+        ("forward development", 10),
+        ("development loop", 10),
+        ("acceptance criteria", 10),
+        ("build from scratch", 9),
+        ("implement from scratch", 9),
+        ("full development cycle", 9),
+        ("expand plan", 8),
+        ("dev loop", 8),
+        ("forward dev", 8),
+        ("implement todo", 7),
+        ("implement_todo", 7),
+        ("fix open bugs", 7),
+        ("fix_open_bugs", 7),
+        ("final acceptance review", 7),
+        ("write tests for todo", 7),
+        ("acceptance.md", 7),
+        ("todo.md", 6),
+        ("bugs.md", 6),
+        ("codex-regulated", 7),
+        ("codex regulated", 7),
+        # Chinese
+        ("正向开发", 10),
+        ("开发循环", 10),
+        ("验收标准", 10),
+        ("完整开发", 9),
+        ("从头构建", 9),
+        ("验收条件", 8),
+        ("开发回路", 8),
+        ("待办实现", 7),
+        ("修复缺陷", 7),
+        ("最终验收审查", 7),
+    ],
     "pr_branch_topology_task": [
         # English
         ("pr head", 5),
@@ -127,6 +164,7 @@ _CATEGORY_KEYWORDS: dict[str, list[tuple[str, int]]] = {
 
 # Priority when scores tie (highest first).
 _CATEGORY_PRIORITY: list[str] = [
+    "forward_development_task",
     "pr_branch_topology_task",
     "patch_review_task",
     "patch_task",
@@ -135,6 +173,11 @@ _CATEGORY_PRIORITY: list[str] = [
 
 # Human-readable descriptions for each task type.
 _TASK_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "forward_development_task": (
+        "Forward development — task requires the full Codex-regulated "
+        "development loop: acceptance criteria, plan, todo items, "
+        "implementation, review, bug fixing, and verification."
+    ),
     "patch_task": (
         "Code patch generation — task requires implementing or modifying source "
         "code and producing a unified diff patch."
@@ -215,6 +258,11 @@ def task_type_description(task_type: str) -> str:
 # Convenience helpers (for programmatic use)
 # ---------------------------------------------------------------------------
 
+def is_forward_development_task(task_text: str) -> bool:
+    """Return True if *task_text* is classified as ``forward_development_task``."""
+    return classify_task(task_text) == "forward_development_task"
+
+
 def is_patch_task(task_text: str) -> bool:
     """Return True if *task_text* is classified as ``patch_task``."""
     return classify_task(task_text) == "patch_task"
@@ -283,7 +331,7 @@ if __name__ == "__main__":
 
     if args.list_types:
         print("Known task types:")
-        for tt in ["patch_task", "patch_review_task", "pr_branch_topology_task", "unsupported_task"]:
+        for tt in ["forward_development_task", "patch_task", "patch_review_task", "pr_branch_topology_task", "unsupported_task"]:
             print(f"  {tt:<30}  {task_type_description(tt)}")
         sys.exit(0)
 

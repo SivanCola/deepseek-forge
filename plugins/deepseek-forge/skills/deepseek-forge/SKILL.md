@@ -167,6 +167,143 @@ When `run_checks.sh` fails, attempt automated repair with DeepSeek:
 
 ---
 
+## Forward Development Loop
+
+When a task requires building a feature from scratch (classified as
+`forward_development_task`), deepseek-forge enters a Codex-regulated development
+cycle instead of a single-patch workflow.
+
+### Trigger
+
+Tasks with keywords like "forward development", "build from scratch",
+"acceptance criteria", or "正向开发" / "开发循环" are classified as
+`forward_development_task`.
+
+### Loop Phases
+
+```text
+acceptance.md → plan.md → todo.md → implement → review → bugs.md → fix → verify
+```
+
+1. **Expand plan.** DeepSeek reads the task and generates acceptance criteria,
+   an implementation plan, and a todo list (`expand_plan` template).
+
+2. **Implement todos.** DeepSeek generates patches for pending todo items in
+   parallel (up to `DEEPSEEK_FORGE_MAX_PARALLEL_AGENTS`, default 3).
+
+3. **Review.** Each candidate patch is reviewed by DeepSeek
+   (`review_candidate_patch` template). Unsafe or incorrect patches are rejected
+   and recorded as bugs.
+
+4. **Apply.** Codex applies approved patches via `apply_patch_safe.py --check`
+   then `--apply`.
+
+5. **Check.** Codex runs project checks. Failures are recorded in `bugs.md` and
+   `state.json`.
+
+6. **Fix.** DeepSeek generates a fix patch for all open bugs
+   (`fix_open_bugs` template). Codex validates, applies, and re-checks.
+
+7. **Verify.** DeepSeek performs a final acceptance review
+   (`final_acceptance_review` template), checking the full diff and check log
+   against acceptance criteria.
+
+### Anti-Oscillation Guards
+
+- **Max loops:** Default 5 (`DEEPSEEK_FORGE_MAX_LOOPS`).
+- **Failure signature dedup:** Same failure 2× in a row stops the loop.
+- **Patch size limit:** >8 files or >500 lines stops and requests todo split.
+
+### Manual Commands
+
+```bash
+# Run the full forward development loop
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/dev_loop.py \
+  --task task.md \
+  --model deepseek-v4-pro
+
+# Resume from a saved state
+python3 ${DEEPSEEK_FORGE_HOME}/scripts/dev_loop.py \
+  --task task.md \
+  --resume
+```
+
+### Artifact Isolation
+
+By default, artifacts are written to:
+
+```text
+/tmp/deepseek-forge/{repo_hash}/{CODEX_THREAD_ID}/{run_id}/
+```
+
+Set `DEEPSEEK_FORGE_ARTIFACT_DIR` to override the base path.
+Set `DEEPSEEK_FORGE_REPO_LOCAL_ARTIFACTS=true` to use `.deepseek-forge/` instead.
+
+Key artifacts:
+| File | Purpose |
+|---|---|
+| `state.json` | Machine-readable loop state (todos, bugs, patches, signatures) |
+| `acceptance.md` | Human-readable acceptance criteria |
+| `plan.md` | Implementation plan |
+| `todo.md` | Todo list with status |
+| `bugs.md` | Open bugs (written by Codex/check results only) |
+| `patch_{todo_id}_{loop}.diff` | Per-todo implementation patches |
+| `fix_{loop}.diff` | Fix patches |
+| `check_{loop}.log` | Check run output |
+
+### Multi-Agent Parallelism
+
+v1 uses multiple parallel DeepSeek API calls within the plugin process, each
+playing a different sub-role:
+
+| Sub-role | Template | Output |
+|---|---|---|
+| `implementer` | `implement_todo` | Unified diff |
+| `reviewer` | `review_candidate_patch` | JSON review |
+| `tester` | `write_tests_for_todo` | Unified diff |
+| `fixer` | `fix_open_bugs` | Unified diff |
+
+### State JSON Schema
+
+`state.json` records the full loop lifecycle:
+
+```json
+{
+  "run_id": "run-1717000000-a1b2c3",
+  "thread_id": "abc123",
+  "repo_root": "/path/to/repo",
+  "base_sha": "abc123...",
+  "loop_index": 2,
+  "status": "implementing",
+  "acceptance": ["..."],
+  "plan": "...",
+  "todos": [
+    {"id": "todo-1", "title": "...", "description": "...", "files": [...], "status": "done"}
+  ],
+  "open_bugs": [
+    {"id": "bug-1", "title": "...", "description": "...", "failure_signature": "...", "severity": "error", "status": "open", "source_loop": 2}
+  ],
+  "patches": [
+    {"id": "patch-todo-1-1", "path": "...", "template": "implement_todo", "todo_id": "todo-1", "loop_index": 1, "file_count": 2, "line_count": 45, "applied": true, "check_result": "passed"}
+  ],
+  "check_results": [
+    {"loop_index": 1, "command": "bash run_checks.sh", "exit_code": 0, "output_path": "...", "passed": true}
+  ],
+  "failure_signatures": ["a1b2c3d4e5f6a7b8"],
+  "max_loops": 5,
+  "max_parallel_agents": 3
+}
+```
+
+### Compatibility
+
+- Existing `patch_task`, `patch_review_task`, `pr_branch_topology_task`, and
+  `fix_tests` workflows are unchanged.
+- `forward_development_task` triggers the new loop; all other classifications
+  use the existing single-patch or branch-surgery flows.
+
+---
+
 ## Safety Rules
 
 These constraints are non-negotiable and apply to every interaction:
@@ -229,7 +366,7 @@ Read these files when the situation demands deeper context:
 
 - **`references/workflow.md`**: Detailed workflow steps, examples, and edge case handling. Read when the standard workflow needs clarification or when debugging unexpected behavior.
 
-- **`references/prompt_templates.md`**: The exact prompt templates sent to DeepSeek (`implement_patch`, `fix_tests`, `review_patch`). Read when tweaking template behavior or troubleshooting DeepSeek output quality.
+- **`references/prompt_templates.md`**: The exact prompt templates sent to DeepSeek (`implement_patch`, `fix_tests`, `review_patch`, `expand_plan`, `implement_todo`, `review_candidate_patch`, `write_tests_for_todo`, `fix_open_bugs`, `final_acceptance_review`). Read when tweaking template behavior or troubleshooting DeepSeek output quality.
 
 ---
 
