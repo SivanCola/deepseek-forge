@@ -27,7 +27,7 @@ codex plugin marketplace add .
 codex plugin add deepseek-forge@deepseek-forge
 ```
 
-If you use the Codex app plugin manager, import the local `deepseek-forge/` folder instead.
+If you use the Codex app plugin manager, import the cloned repository root.
 
 2. Set your DeepSeek API key:
 
@@ -86,7 +86,7 @@ Only `DEEPSEEK_API_KEY` is required.
 | `DEEPSEEK_MODEL` | No | `deepseek-v4-pro` | Model used for patch generation. |
 | `DEEPSEEK_REASONING_EFFORT` | No | `max` | `high` or `max`. Compatibility values: `low` / `medium` -> `high`, `xhigh` -> `max`. |
 | `DEEPSEEK_ENABLE_1M_CONTEXT` | No | `true` | Enables larger context collection. Set to `false` to reduce cost and latency. |
-| `DEEPSEEK_FORGE_HOME` | No | parent of `scripts/` dir | Root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
+| `DEEPSEEK_FORGE_HOME` | No | `skills/deepseek-forge` | Skill root directory of the deepseek-forge installation (where `SKILL.md` and `references/prompt_templates.md` live). |
 | `DEEPSEEK_FORGE_ARTIFACT_DIR` | No | `/tmp/deepseek-forge-{pid}/` | Where runtime artifacts (patches, logs, context files) are written. Set to `.deepseek-forge` to keep artifacts in the target repo. |
 
 With 1M context enabled, context collection defaults to 200 files and 500,000 bytes. With it disabled, defaults are 80 files and 120,000 bytes.
@@ -124,7 +124,7 @@ When multiple PRs share the same head SHA (e.g., stacked or chained branches tha
 
 1. **Task classification.** The `task_classifier.py` module detects a `pr_branch_topology_task` and routes to branch surgery mode.
 2. **Lightweight context.** `collect_context.py --mode pr-branch-topology` gathers only git/PR metadata (no source code), keeping the payload small.
-3. **Split plan generation.** `scripts/branch_surgery.py` analyzes shared heads, computes per-PR commit ranges and file lists, and produces safe push commands.
+3. **Split plan generation.** `branch_surgery.py` analyzes shared heads, computes per-PR commit ranges and file lists, and produces safe push commands.
 4. **Manual review.** The generated plan is dry-run only. You review each split command before execution.
 5. **Post-push verification.** A checklist confirms commits, files, head SHA, and base ref for each pushed branch.
 
@@ -197,24 +197,24 @@ python3 ${DEEPSEEK_FORGE_HOME}/scripts/apply_patch_safe.py --patch .deepseek-for
 bash ${DEEPSEEK_FORGE_HOME}/scripts/run_checks.sh
 ```
 
-For repo-internal debugging (e.g., when hacking on deepseek-forge itself), relative paths also work:
+For repo-internal debugging (e.g., when hacking on deepseek-forge itself), use the skill script path:
 
 ```bash
 mkdir -p .deepseek-forge
 
-python3 scripts/collect_context.py \
+python3 skills/deepseek-forge/scripts/collect_context.py \
   --task task.md \
   --output .deepseek-forge/repo_context.md
 
-python3 scripts/deepseek_worker.py \
+python3 skills/deepseek-forge/scripts/deepseek_worker.py \
   --model deepseek-v4-pro \
   --task task.md \
   --context .deepseek-forge/repo_context.md \
   --output .deepseek-forge/patch.diff
 
-python3 scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --check
-python3 scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --apply
-bash scripts/run_checks.sh
+python3 skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --check
+python3 skills/deepseek-forge/scripts/apply_patch_safe.py --patch .deepseek-forge/patch.diff --apply
+bash skills/deepseek-forge/scripts/run_checks.sh
 ```
 
 Advanced debugging environment variables:

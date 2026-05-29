@@ -11,8 +11,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Ensure the scripts directory is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+# Ensure the skill scripts directory is importable.
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parent.parent
+        / "skills"
+        / "deepseek-forge"
+        / "scripts"
+    ),
+)
 
 import forge_config
 

@@ -10,8 +10,17 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
-# Make the script importable from the tests/ directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+# Make the skill script importable from the tests/ directory.
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__),
+        '..',
+        'skills',
+        'deepseek-forge',
+        'scripts',
+    ),
+)
 import apply_patch_safe
 
 

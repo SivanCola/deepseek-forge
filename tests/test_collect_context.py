@@ -15,8 +15,16 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
 
-# Ensure the scripts directory is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+# Ensure the skill scripts directory is importable.
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parent.parent
+        / "skills"
+        / "deepseek-forge"
+        / "scripts"
+    ),
+)
 
 import collect_context as cc
 

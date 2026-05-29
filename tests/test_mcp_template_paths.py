@@ -1,4 +1,4 @@
-"""Integration test: MCP _read_template path resolution in plugin vs standalone layout."""
+"""Integration test: MCP _read_template path resolution."""
 
 import os
 import sys
@@ -7,7 +7,7 @@ import unittest
 
 
 class TestPluginTemplatePathResolution(unittest.TestCase):
-    """Verify MCP tools find templates from both plugin and standalone layouts."""
+    """Verify MCP tools find templates from supported layouts."""
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -17,12 +17,10 @@ class TestPluginTemplatePathResolution(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def _make_plugin_layout(self):
-        """Create deepseek-forge/ layout with tool and template."""
-        tools_dir = os.path.join(
-            self.root, "deepseek-forge", "mcp", "deepseek-mcp", "tools"
-        )
+        """Create the flattened plugin layout with tool and template."""
+        tools_dir = os.path.join(self.root, "mcp", "deepseek-mcp", "tools")
         tmpl_dir = os.path.join(
-            self.root, "deepseek-forge", "skills", "deepseek-forge", "references"
+            self.root, "skills", "deepseek-forge", "references"
         )
         os.makedirs(tools_dir)
         os.makedirs(tmpl_dir)
@@ -83,10 +81,10 @@ class TestPluginTemplatePathResolution(unittest.TestCase):
     def test_plugin_layout_correct_number_of_parent_dirs(self):
         """From mcp/deepseek-mcp/tools/, three '..' reaches the plugin root."""
         tools_dir = self._make_plugin_layout()
-        # Simulate: tools_dir = .../deepseek-forge/mcp/deepseek-mcp/tools
-        # Three levels up = .../deepseek-forge/
+        # Simulate: tools_dir = .../mcp/deepseek-mcp/tools
+        # Three levels up = plugin repository root.
         plugin_root = os.path.normpath(os.path.join(tools_dir, "..", "..", ".."))
-        expected = os.path.normpath(os.path.join(self.root, "deepseek-forge"))
+        expected = os.path.normpath(self.root)
         self.assertEqual(plugin_root, expected,
                          f"Plugin root mismatch: {plugin_root} != {expected}")
 

@@ -1,4 +1,4 @@
-"""Comprehensive unit tests for scripts/task_classifier.py.
+"""Comprehensive unit tests for skills/deepseek-forge/scripts/task_classifier.py.
 
 Covers all four task categories, edge cases, mixed signals, case insensitivity,
 bilingual (Chinese/English) input, and garbage/noise rejection.
@@ -13,8 +13,15 @@ import sys
 import unittest
 from pathlib import Path
 
-# Ensure the scripts directory is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+SCRIPT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "skills"
+    / "deepseek-forge"
+    / "scripts"
+)
+
+# Ensure the skill scripts directory is importable.
+sys.path.insert(0, str(SCRIPT_PATH))
 
 import task_classifier as tc
 
@@ -477,8 +484,7 @@ class TestCLI(unittest.TestCase):
         """--help should print usage and exit 0."""
         import subprocess
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve().parent.parent /
-             "scripts" / "task_classifier.py"), "--help"],
+            [sys.executable, str(SCRIPT_PATH / "task_classifier.py"), "--help"],
             capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 0)
@@ -488,8 +494,7 @@ class TestCLI(unittest.TestCase):
         """--list-types should list all 4 types."""
         import subprocess
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve().parent.parent /
-             "scripts" / "task_classifier.py"), "--list-types"],
+            [sys.executable, str(SCRIPT_PATH / "task_classifier.py"), "--list-types"],
             capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 0)
@@ -502,8 +507,13 @@ class TestCLI(unittest.TestCase):
         """Positional args should still classify."""
         import subprocess
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve().parent.parent /
-             "scripts" / "task_classifier.py"), "implement", "login", "feature"],
+            [
+                sys.executable,
+                str(SCRIPT_PATH / "task_classifier.py"),
+                "implement",
+                "login",
+                "feature",
+            ],
             capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 0)
@@ -517,8 +527,12 @@ class TestCLI(unittest.TestCase):
             tmp = f.name
         try:
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).resolve().parent.parent /
-                 "scripts" / "task_classifier.py"), "--file", tmp],
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH / "task_classifier.py"),
+                    "--file",
+                    tmp,
+                ],
                 capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 0)
@@ -530,8 +544,7 @@ class TestCLI(unittest.TestCase):
         """Empty input should exit with error."""
         import subprocess
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve().parent.parent /
-             "scripts" / "task_classifier.py")],
+            [sys.executable, str(SCRIPT_PATH / "task_classifier.py")],
             capture_output=True, text=True, timeout=10,
         )
         self.assertNotEqual(result.returncode, 0)
