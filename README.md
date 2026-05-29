@@ -18,16 +18,24 @@ Codex plans and verifies. DeepSeek returns unified diffs. You keep local control
 
 ## Quick Start
 
-1. Install the local plugin:
+1. Install from the Git marketplace:
+
+```bash
+codex plugin marketplace add https://github.com/SivanCola/deepseek-forge.git --ref main
+codex plugin add deepseek-forge@deepseek-forge
+```
+
+This is the recommended installation path for normal use because Codex can refresh Git marketplace snapshots.
+
+For local plugin development, clone the repository and reinstall from the local marketplace:
 
 ```bash
 git clone git@github.com:SivanCola/deepseek-forge.git
 cd deepseek-forge
-codex plugin marketplace add .
-codex plugin add deepseek-forge@deepseek-forge
+scripts/reinstall-local-plugin.sh
 ```
 
-If you use the Codex app plugin manager, import the cloned repository root.
+If you use the Codex app plugin manager for development, import the cloned repository root.
 
 2. Set your DeepSeek API key:
 
