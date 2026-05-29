@@ -51,7 +51,7 @@ Desktop.ini
 
 # Project planning (local only)
 bugs.md
-agent.md
+AGENTS.md
 todo.md
 
 # Secrets (must never be committed)
