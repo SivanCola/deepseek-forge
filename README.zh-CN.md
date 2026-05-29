@@ -32,7 +32,17 @@ codex plugin add deepseek-forge@deepseek-forge
 2. 设置 DeepSeek API Key：
 
 ```bash
-export DEEPSEEK_API_KEY="your-deepseek-api-key"
+echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.zshrc
+echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+或者写入 `~/.profile`：
+
+```bash
+echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.profile
+echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.profile
+source ~/.profile
 ```
 
 3. 在目标代码仓库里打开 Codex，然后输入：

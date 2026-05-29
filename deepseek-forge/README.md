@@ -18,7 +18,17 @@ If you use the Codex app plugin manager, import this `deepseek-forge/` folder.
 2. Set your API key:
 
 ```bash
-export DEEPSEEK_API_KEY="your-deepseek-api-key"
+echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.zshrc
+echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Or write the same settings to `~/.profile`:
+
+```bash
+echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.profile
+echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.profile
+source ~/.profile
 ```
 
 3. Open Codex in your target repository and ask:
