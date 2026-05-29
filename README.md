@@ -72,6 +72,26 @@ Use the deepseek-forge skill to implement:
 
 Codex will collect context, ask DeepSeek for a patch, validate it, review it, apply it, run checks, and request a fix patch if checks fail.
 
+## Troubleshooting
+
+### `spawn ... codex ENOENT`
+
+If `codex plugin marketplace add` or `codex plugin add` fails with an error like:
+
+```text
+Error: spawn .../codex ENOENT
+```
+
+the Codex CLI native binary is missing or the global CLI install is broken. This happens before DeepSeek Forge is loaded, so it is not a plugin package error.
+
+Reinstall the Codex CLI with optional native dependencies:
+
+```bash
+npm install -g @openai/codex@latest --force --include=optional
+```
+
+Then retry the plugin installation commands.
+
 ## Trigger Phrases
 
 For reliable activation, mention `deepseek-forge` or `DeepSeek` explicitly:

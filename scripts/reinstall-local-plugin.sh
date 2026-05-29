@@ -69,6 +69,23 @@ run() {
   fi
 }
 
+check_codex_cli() {
+  local output
+  if ! output="$(codex --version 2>&1)"; then
+    cat >&2 <<EOF
+[deepseek-forge] ERROR: Codex CLI appears to be broken before plugin installation.
+[deepseek-forge] DeepSeek Forge has not been loaded yet, so this is usually not a plugin package error.
+[deepseek-forge] codex --version output:
+${output}
+[deepseek-forge] Try reinstalling Codex CLI with optional native dependencies:
+  npm install -g @openai/codex@latest --force --include=optional
+EOF
+    exit 1
+  fi
+
+  echo "[deepseek-forge] Codex CLI: ${output}"
+}
+
 warn_if_dirty() {
   if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     local status
@@ -117,6 +134,8 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "[deepseek-forge] Would run package checks and reinstall the plugin."
   exit 0
 fi
+
+check_codex_cli
 
 "${REPO_ROOT}/scripts/check-plugin-package.sh"
 

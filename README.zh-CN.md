@@ -72,6 +72,26 @@ Use the deepseek-forge skill to implement:
 
 Codex 会收集上下文、让 DeepSeek 生成 patch、校验并审查 patch、应用改动、运行检查；如果检查失败，会请求 DeepSeek 生成修复 patch。
 
+## 故障排查
+
+### `spawn ... codex ENOENT`
+
+如果执行 `codex plugin marketplace add` 或 `codex plugin add` 时报类似错误：
+
+```text
+Error: spawn .../codex ENOENT
+```
+
+说明 Codex CLI 的原生二进制缺失，或者全局 CLI 安装已损坏。这个错误发生在 DeepSeek Forge 插件被加载之前，所以通常不是插件包本身的问题。
+
+用包含 optional native dependencies 的方式重装 Codex CLI：
+
+```bash
+npm install -g @openai/codex@latest --force --include=optional
+```
+
+然后重新执行插件安装命令。
+
 ## 触发用法
 
 为了稳定触发，请明确提到 `deepseek-forge` 或 `DeepSeek`：
