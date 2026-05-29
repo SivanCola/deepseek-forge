@@ -27,6 +27,10 @@ codex plugin add deepseek-forge@deepseek-forge
 
 This is the recommended installation path for normal use because Codex can refresh Git marketplace snapshots.
 
+After installation, DeepSeek Forge appears in the Codex plugin picker:
+
+![DeepSeek Forge in the Codex plugin picker](./docs/assets/codex-plugin-picker.svg)
+
 For local plugin development, clone the repository and reinstall from the local marketplace:
 
 ```bash

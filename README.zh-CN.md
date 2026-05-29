@@ -27,6 +27,10 @@ codex plugin add deepseek-forge@deepseek-forge
 
 这是普通使用时的推荐安装方式，因为 Codex 可以刷新 Git marketplace snapshot。
 
+安装完成后，可以在 Codex 插件菜单中看到 DeepSeek Forge：
+
+![Codex 插件菜单中的 DeepSeek Forge](./docs/assets/codex-plugin-picker.svg)
+
 如果是本地开发插件，请 clone 仓库并从本地 marketplace 重装：
 
 ```bash
