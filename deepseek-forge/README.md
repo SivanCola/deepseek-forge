@@ -9,7 +9,8 @@ Codex plans, validates, applies, and runs checks. DeepSeek only returns unified 
 1. Install this plugin folder:
 
 ```bash
-codex plugin install ./deepseek-forge
+codex plugin marketplace add .
+codex plugin add deepseek-forge@deepseek-forge
 ```
 
 If you use the Codex app plugin manager, import this `deepseek-forge/` folder.

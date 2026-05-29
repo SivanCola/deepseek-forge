@@ -23,7 +23,8 @@ Codex plans and verifies. DeepSeek returns unified diffs. You keep local control
 ```bash
 git clone git@github.com:SivanCola/deepseek-forge.git
 cd deepseek-forge
-codex plugin install ./deepseek-forge
+codex plugin marketplace add .
+codex plugin add deepseek-forge@deepseek-forge
 ```
 
 If you use the Codex app plugin manager, import the local `deepseek-forge/` folder instead.

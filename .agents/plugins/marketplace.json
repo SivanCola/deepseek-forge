@@ -1,0 +1,20 @@
+{
+  "name": "deepseek-forge",
+  "interface": {
+    "displayName": "DeepSeek Forge"
+  },
+  "plugins": [
+    {
+      "name": "deepseek-forge",
+      "source": {
+        "source": "local",
+        "path": "./deepseek-forge"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
