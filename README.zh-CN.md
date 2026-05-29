@@ -31,9 +31,12 @@ codex plugin add deepseek-forge@deepseek-forge
 
 2. 设置 DeepSeek API Key：
 
+写入到 `~/.zshrc`：
+
 ```bash
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.zshrc
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.zshrc
+echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -42,6 +45,7 @@ source ~/.zshrc
 ```bash
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.profile
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.profile
+echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.profile
 source ~/.profile
 ```
 

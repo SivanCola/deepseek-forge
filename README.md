@@ -31,9 +31,12 @@ If you use the Codex app plugin manager, import the local `deepseek-forge/` fold
 
 2. Set your DeepSeek API key:
 
+Write the settings to `~/.zshrc`:
+
 ```bash
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.zshrc
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.zshrc
+echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -42,6 +45,7 @@ Or write the same settings to `~/.profile`:
 ```bash
 echo 'export DEEPSEEK_API_KEY="your-deepseek-api-key"' >> ~/.profile
 echo 'export DEEPSEEK_MODEL="deepseek-v4-pro"' >> ~/.profile
+echo 'export DEEPSEEK_REASONING_EFFORT="max"' >> ~/.profile
 source ~/.profile
 ```
 
