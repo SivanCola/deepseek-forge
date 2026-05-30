@@ -242,8 +242,7 @@ def acquire_repo_lock(repo_root: str | Path | None = None):
                     f"Could not acquire repository lock at {lock_path} "
                     f"after {max_attempts} attempts."
                 )
-            import time as _time
-            _time.sleep(0.1 * attempts)
+            time.sleep(0.1 * attempts)
 
     try:
         yield
@@ -284,8 +283,8 @@ def get_max_parallel_agents() -> int:
 # ---------------------------------------------------------------------------
 
 
-class _RepoLock:
-    """Callable context manager for per-repository serialisation.
+class repo_lock:
+    """Context manager for per-repository serialisation.
 
     Usage::
 
@@ -294,17 +293,19 @@ class _RepoLock:
 
     *held* is the lock directory :class:`Path` when locked, or ``None`` when
     the lock is disabled via ``DEEPSEEK_FORGE_DISABLE_REPO_LOCK``.
+
+    Each ``repo_lock(...)`` call creates a fresh instance, so there is no
+    shared mutable state between concurrent lock acquisitions.
     """
 
-    def __call__(self, repo_root: str | Path | None = None, *,
-                 reason: str = "") -> "_RepoLock":
+    def __init__(self, repo_root: str | Path | None = None, *,
+                 reason: str = "") -> None:
         self._repo_root = repo_root
         self._reason = reason
-        return self
+        self._lock_path: Path | None = None
 
     def __enter__(self) -> Path | None:
         if is_repo_lock_disabled():
-            self._lock_path = None
             return None
 
         self._lock_path = get_repo_lock_path(self._repo_root)
@@ -338,6 +339,3 @@ class _RepoLock:
             except OSError:
                 pass
         return None
-
-
-repo_lock = _RepoLock()

@@ -1,8 +1,5 @@
 """Tool: deepseek.implement_todo — Generate patch for a specific todo item."""
 
-import os
-import sys
-
 from . import config
 
 
@@ -52,39 +49,6 @@ IMPLEMENT_TODO_SCHEMA = {
 }
 
 
-def _extract_diff(response_text: str) -> str:
-    text = response_text.strip()
-    if text.startswith("```diff"):
-        print("[deepseek-forge-mcp] Warning: removing diff code fences from response", file=sys.stderr)
-        text = text[len("```diff"):].strip()
-    elif text.startswith("```"):
-        print("[deepseek-forge-mcp] Warning: removing code fences from response", file=sys.stderr)
-        text = text[len("```"):].strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
-
-    lines = text.split("\n")
-    diff_start = None
-    diff_end = None
-    diff_prefixes = ("+", "-", " ", "@@", "---", "+++", "\\")
-
-    for i, line in enumerate(lines):
-        if diff_start is None and (line.startswith("--- a/") or line.startswith("--- /dev/null")):
-            diff_start = i
-        if line and any(line.startswith(p) for p in diff_prefixes):
-            diff_end = i
-
-    if diff_start is None or diff_end is None or diff_end < diff_start:
-        raise ValueError("Response contains no valid unified diff")
-
-    diff_text = "\n".join(lines[diff_start:diff_end + 1])
-
-    if not diff_text or "--- " not in diff_text:
-        raise ValueError("Response contains no valid unified diff")
-
-    return diff_text
-
-
 def handle_implement_todo(arguments: dict) -> dict:
     cfg = config.get_config()
     todo_id = arguments["todo_id"]
@@ -121,9 +85,10 @@ def handle_implement_todo(arguments: dict) -> dict:
     raw_response = config.call_api(
         cfg["endpoint"], cfg["api_key"], request_body, cfg["timeout"]
     )
-    diff_text = _extract_diff(raw_response)
+    diff_text = config.extract_diff(raw_response)
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    output_path = config.validate_output_path(output_path)
+    config.ensure_output_dir(output_path)
     with open(output_path, "w") as f:
         f.write(diff_text)
 

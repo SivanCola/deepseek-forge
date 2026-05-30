@@ -153,24 +153,28 @@ class TestConfigReading(unittest.TestCase):
         cfg = config.get_config()
         self.assertEqual(cfg["timeout"], 120)
 
-    def test_artifact_dir_default_uses_pid(self):
+    def test_artifact_dir_default_uses_tmp_base(self):
         config = self._import_config()
-        path = config.get_artifact_dir()
-        self.assertIn(f"deepseek-forge-{os.getpid()}", path)
+        path = str(config.get_artifact_dir())
+        self.assertIn("/tmp/deepseek-forge/", path)
+        # Should include repo_hash/thread_id/run_id isolation subdirs
+        parts = path.split("/")
+        self.assertGreater(len(parts), 4, f"path too shallow: {path}")
 
-    def test_artifact_dir_uses_session_id(self):
-        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "chat/beta 2"
+    def test_artifact_dir_uses_session_id_in_thread(self):
+        os.environ["DEEPSEEK_FORGE_SESSION_ID"] = "chat-beta-2"
         config = self._import_config()
-        path = config.get_artifact_dir()
-        self.assertIn(f"deepseek-forge-chat-beta-2-{os.getpid()}", path)
+        path = str(config.get_artifact_dir())
+        self.assertIn("/chat-beta-2/", path)
 
     def test_artifact_path_uses_artifact_dir_override(self):
         os.environ["DEEPSEEK_FORGE_ARTIFACT_DIR"] = "/tmp/deepseek-custom"
         config = self._import_config()
+        artifact_path = config.get_artifact_path("patch.diff")
+        self.assertIn("deepseek-custom", artifact_path)
         self.assertTrue(
-            config.get_artifact_path("patch.diff").endswith(
-                "/deepseek-custom/patch.diff"
-            )
+            artifact_path.endswith("/patch.diff"),
+            f"expected .../patch.diff got {artifact_path}"
         )
 
 

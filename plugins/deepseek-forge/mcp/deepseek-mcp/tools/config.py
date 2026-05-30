@@ -1,12 +1,14 @@
 """Shared configuration and API helpers for deepseek-forge-mcp tools."""
 
+import hashlib
 import json
 import os
 import re
 import sys
-import tempfile
+import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 # Internal defaults — not exposed as user-facing config
 _DEFAULT_ENDPOINT = "https://api.deepseek.com/chat/completions"
@@ -38,23 +40,186 @@ def get_session_id() -> str | None:
     return _sanitize_path_component(raw)
 
 
-def get_artifact_dir() -> str:
-    """Return the artifact directory used by MCP tools."""
-    env = os.environ.get("DEEPSEEK_FORGE_ARTIFACT_DIR")
-    if env:
-        return os.path.abspath(os.path.expanduser(env))
+# ---------------------------------------------------------------------------
+# Artifact directory — same isolation logic as scripts/forge_config.py so that
+# MCP tools and the dev loop share the same artifact tree.
+# ---------------------------------------------------------------------------
 
-    session_id = get_session_id()
-    if session_id:
-        dirname = f"deepseek-forge-{session_id}-{os.getpid()}"
+
+def _find_git_root() -> Path | None:
+    d = Path.cwd().resolve()
+    while True:
+        if (d / ".git").exists():
+            return d
+        parent = d.parent
+        if parent == d:
+            return None
+        d = parent
+
+
+def _repo_hash() -> str:
+    root = _find_git_root() or Path.cwd().resolve()
+    return hashlib.sha256(str(root).encode()).hexdigest()[:12]
+
+
+def _thread_id() -> str:
+    tid = os.environ.get("CODEX_THREAD_ID", "").strip()
+    if tid:
+        return tid
+    sid = get_session_id()
+    if sid:
+        return sid
+    return f"unknown-{os.getpid()}"
+
+
+def _run_id() -> str:
+    rid = os.environ.get("DEEPSEEK_FORGE_RUN_ID", "").strip()
+    if rid:
+        return rid
+    return f"run-{int(time.time())}"
+
+
+def get_artifact_dir() -> Path:
+    """Return the isolated artifact directory (mirrors forge_config.get_artifact_dir)."""
+    repo_local = os.environ.get("DEEPSEEK_FORGE_REPO_LOCAL_ARTIFACTS", "false")
+    if repo_local.lower() in ("true", "1"):
+        root = _find_git_root() or Path.cwd().resolve()
+        base = root / ".deepseek-forge"
     else:
-        dirname = f"deepseek-forge-{os.getpid()}"
-    return os.path.join(tempfile.gettempdir(), dirname)
+        env = os.environ.get("DEEPSEEK_FORGE_ARTIFACT_DIR")
+        if env:
+            base = Path(env).expanduser().resolve()
+        else:
+            base = Path("/tmp/deepseek-forge")
+
+    return base / _repo_hash() / _thread_id() / _run_id()
+
+
+# ---------------------------------------------------------------------------
+# Shared response extraction helpers (used by all MCP tools)
+# ---------------------------------------------------------------------------
+
+
+def _validate_diff(diff_text: str) -> None:
+    """Raise ValueError if *diff_text* is not a plausible unified diff."""
+    if not diff_text or not diff_text.strip():
+        raise ValueError("Response contains no content (empty)")
+
+    has_src = diff_text.strip().startswith("--- ")
+    has_dst = "+++ b/" in diff_text
+    has_hunk = "@@" in diff_text and " @@" in diff_text
+
+    if not has_src:
+        raise ValueError("Response does not start with '--- ' source header")
+    if not has_dst:
+        raise ValueError("Response missing '+++ b/' destination header")
+    if not has_hunk:
+        raise ValueError("Response missing '@@ ... @@' hunk header")
+
+    for line in diff_text.split("\n"):
+        stripped = line.strip()
+        if stripped in ("$ ", "$", "> ", "bash", "#!/bin/bash", "#!/bin/sh"):
+            raise ValueError(
+                f"Response contains prohibited shell content: '{stripped}'"
+            )
+        if "git add" in stripped or "git commit" in stripped or "git push" in stripped:
+            raise ValueError(f"Response contains prohibited git command: '{stripped}'")
+
+
+def extract_diff(response_text: str) -> str:
+    """Extract a validated unified diff from a model response.
+
+    Strips markdown code fences, locates the diff block, validates its
+    structure, and warns on stderr about stripped non-diff lines.
+    Raises ``ValueError`` if no valid diff is found.
+    """
+    text = response_text.strip()
+
+    if text.startswith("```diff"):
+        print(
+            "[deepseek-forge-mcp] Warning: removing diff code fences from response",
+            file=sys.stderr,
+        )
+        text = text[len("```diff"):].strip()
+    elif text.startswith("```"):
+        print(
+            "[deepseek-forge-mcp] Warning: removing code fences from response",
+            file=sys.stderr,
+        )
+        text = text[len("```"):].strip()
+
+    if text.endswith("```"):
+        text = text[:-3].strip()
+
+    lines = text.split("\n")
+    diff_start = None
+    diff_end = None
+    diff_prefixes = ("+", "-", " ", "@@", "---", "+++", "\\")
+
+    for i, line in enumerate(lines):
+        if diff_start is None and (
+            line.startswith("--- a/") or line.startswith("--- /dev/null")
+        ):
+            diff_start = i
+        if line and any(line.startswith(p) for p in diff_prefixes):
+            diff_end = i
+
+    if diff_start is None or diff_end is None or diff_end < diff_start:
+        raise ValueError("Response contains no valid unified diff")
+
+    stripped_before = diff_start
+    stripped_after = len(lines) - 1 - diff_end
+    total_stripped = stripped_before + stripped_after
+    if total_stripped > 0:
+        print(
+            f"[deepseek-forge-mcp] Warning: stripped {total_stripped} non-diff "
+            f"lines from response",
+            file=sys.stderr,
+        )
+
+    diff_text = "\n".join(lines[diff_start:diff_end + 1])
+    _validate_diff(diff_text)
+    return diff_text
+
+
+def extract_json(response_text: str) -> dict:
+    """Extract a JSON object from a model response (handles markdown fences)."""
+    import json as _json
+    text = response_text.strip()
+    if text.startswith("```json"):
+        text = text[len("```json"):].strip()
+    elif text.startswith("```"):
+        text = text[len("```"):].strip()
+    if text.endswith("```"):
+        text = text[:-3].strip()
+    return _json.loads(text)
 
 
 def get_artifact_path(filename: str) -> str:
     """Return a default artifact path for *filename*."""
-    return os.path.join(get_artifact_dir(), filename)
+    return str(get_artifact_dir() / filename)
+
+
+def validate_output_path(output_path: str) -> str:
+    """Validate and return a safe output path, raising ValueError on traversal.
+
+    Rejects absolute paths and paths containing ``..`` segments.
+    Returns the resolved path under the artifact directory if the requested
+    path is relative and safe.
+    """
+    if os.path.isabs(output_path):
+        raise ValueError(f"Absolute output path rejected: {output_path}")
+    segments = output_path.replace("\\", "/").split("/")
+    if ".." in segments:
+        raise ValueError(f"Path traversal rejected in output path: {output_path}")
+    return output_path
+
+
+def ensure_output_dir(output_path: str) -> None:
+    """Create parent directories for *output_path* if they don't exist."""
+    d = os.path.dirname(output_path)
+    if d:
+        os.makedirs(d, exist_ok=True)
 
 
 def read_template(template_name: str) -> str:
@@ -85,21 +250,23 @@ def read_template(template_name: str) -> str:
 
     with open(tmpl_path) as f:
         content = f.read()
-    marker = f"## Template: `{template_name}`"
-    alt_marker = f"## Template: {template_name}"
 
-    start = content.find(marker)
-    if start == -1:
-        start = content.find(alt_marker)
-    if start == -1:
+    escaped = re.escape(template_name)
+    heading_pat = re.compile(
+        r"^#{2,4}\s+Template:\s+`?" + escaped + r"`?", re.MULTILINE
+    )
+    match = heading_pat.search(content)
+    if match is None:
         raise ValueError(f"Template '{template_name}' not found in {tmpl_path}")
 
-    body_start = content.find("\n", start) + 1
-    remainder = content[body_start:]
-    next_section = remainder.find("\n## Template:")
-    if next_section != -1:
-        return remainder[:next_section].strip()
-    return remainder.strip()
+    start = match.end()
+    if start < len(content) and content[start] == "\n":
+        start += 1
+
+    next_heading = re.compile(r"^#{2,4}\s+Template:", re.MULTILINE)
+    next_match = next_heading.search(content, start)
+    end = next_match.start() if next_match else len(content)
+    return content[start:end].strip()
 
 
 def _normalize_reasoning_effort(raw: str) -> str:

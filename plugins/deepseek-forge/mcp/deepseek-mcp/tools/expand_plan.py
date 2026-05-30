@@ -22,18 +22,6 @@ EXPAND_PLAN_SCHEMA = {
 }
 
 
-def _parse_json_response(raw: str) -> dict:
-    import json
-    text = raw.strip()
-    if text.startswith("```json"):
-        text = text[len("```json"):].strip()
-    elif text.startswith("```"):
-        text = text[len("```"):].strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
-    return json.loads(text)
-
-
 def handle_expand_plan(arguments: dict) -> dict:
     cfg = config.get_config()
     task = arguments["task"]
@@ -56,4 +44,4 @@ def handle_expand_plan(arguments: dict) -> dict:
     raw_response = config.call_api(
         cfg["endpoint"], cfg["api_key"], request_body, cfg["timeout"]
     )
-    return _parse_json_response(raw_response)
+    return config.extract_json(raw_response)

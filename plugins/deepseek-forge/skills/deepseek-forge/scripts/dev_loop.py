@@ -114,6 +114,7 @@ def _call_deepseek(
     endpoint: str = "https://api.deepseek.com/chat/completions",
     temperature: float = 0.2,
     timeout: int = 180,
+    reasoning_effort: str | None = None,
 ) -> str:
     """Call the DeepSeek API and return the assistant's text response."""
     import json as _json
@@ -124,14 +125,21 @@ def _call_deepseek(
     if not key:
         raise RuntimeError("DEEPSEEK_API_KEY not set")
 
-    body = _json.dumps({
+    _REASONING_MODEL_PATTERNS = ("v4-pro", "reasoner")
+
+    body_dict: dict = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
         "temperature": temperature,
-    }).encode("utf-8")
+    }
+
+    if reasoning_effort and any(p in model for p in _REASONING_MODEL_PATTERNS):
+        body_dict["reasoning_effort"] = reasoning_effort
+
+    body = _json.dumps(body_dict).encode("utf-8")
 
     req = urllib.request.Request(
         endpoint,
@@ -143,9 +151,17 @@ def _call_deepseek(
         method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = _json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"DeepSeek API HTTP {e.code}: {body[:500]}"
+        )
+    except (TimeoutError, OSError) as e:
+        raise RuntimeError(f"DeepSeek API request failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +192,7 @@ def _extract_diff(response_text: str) -> str:
 
     first_diff = None
     for i, line in enumerate(raw_lines):
-        if line.startswith("--- "):
+        if line.startswith("--- a/") or line.startswith("--- /dev/null"):
             first_diff = i
             break
 
@@ -223,13 +239,14 @@ def expand_plan(
     task: str,
     context: str = "",
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Call DeepSeek to expand a task into acceptance criteria, plan, and todos."""
     template = _read_template("expand_plan")
     user = f"# Task\n\n{task}"
     if context:
         user += f"\n\n# Repository Context\n\n{context}"
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_json(response)
 
 
@@ -243,6 +260,7 @@ def implement_todo(
     context: str,
     state_json: str = "",
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> str:
     """Call DeepSeek to generate a patch for a single todo item."""
     template = _read_template("implement_todo")
@@ -257,7 +275,7 @@ def implement_todo(
     )
     if state_json:
         user += f"\n\n# Current State\n\n{state_json}"
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_diff(response)
 
 
@@ -271,6 +289,7 @@ def review_candidate_patch(
     patch: str,
     context: str = "",
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Call DeepSeek to review a candidate implementation patch."""
     template = _read_template("review_candidate_patch")
@@ -282,7 +301,7 @@ def review_candidate_patch(
     )
     if context:
         user += f"\n\n# Repository Context\n\n{context}"
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_json(response)
 
 
@@ -296,6 +315,7 @@ def write_tests_for_todo(
     implementation_patch: str,
     context: str = "",
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> str:
     """Call DeepSeek to generate tests for a todo."""
     template = _read_template("write_tests_for_todo")
@@ -307,7 +327,7 @@ def write_tests_for_todo(
     )
     if context:
         user += f"\n\n# Repository Context\n\n{context}"
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_diff(response)
 
 
@@ -321,6 +341,7 @@ def fix_open_bugs(
     context: str,
     patch_history: str = "",
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> str:
     """Call DeepSeek to generate a fix patch for open bugs."""
     template = _read_template("fix_open_bugs")
@@ -336,7 +357,7 @@ def fix_open_bugs(
         user += f"\n\n# Repository Context\n\n{context}"
     if patch_history:
         user += f"\n\n# Patch History\n\n{patch_history}"
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_diff(response)
 
 
@@ -349,6 +370,7 @@ def final_acceptance_review(
     full_diff: str,
     check_log: str,
     model: str = "deepseek-v4-pro",
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Call DeepSeek for final acceptance assessment."""
     template = _read_template("final_acceptance_review")
@@ -357,7 +379,7 @@ def final_acceptance_review(
         f"\n\n# Full Implementation Diff\n\n{full_diff}\n\n"
         f"# Check Results\n\n{check_log}"
     )
-    response = _call_deepseek(model, template, user)
+    response = _call_deepseek(model, template, user, reasoning_effort=reasoning_effort)
     return _extract_json(response)
 
 
@@ -468,12 +490,16 @@ def run_forward_development_loop(
     state.status = "planning"
     save_state(state)
 
+    # Resolve reasoning effort once, so all DeepSeek calls in this run use it
+    raw_effort = os.environ.get("DEEPSEEK_REASONING_EFFORT", "").strip()
+    reasoning_effort = raw_effort if raw_effort else None
+
     max_parallel = state.max_parallel_agents
 
     # ---- Phase 1: Expand plan -------------------------------------------
     print(f"[dev_loop] Loop {state.loop_index}: expanding plan...")
     try:
-        expansion = expand_plan(task, context, model)
+        expansion = expand_plan(task, context, model, reasoning_effort)
         state.acceptance = expansion.get("acceptance", [])
         state.plan = expansion.get("plan", "")
         todo_dicts = expansion.get("todos", [])
@@ -520,10 +546,10 @@ def run_forward_development_loop(
 
         # ---- Phase 2a: Implement pending todos (parallel) --------------
         if pending:
-            _implement_todos_parallel(state, pending, context, model, max_parallel)
+            _implement_todos_parallel(state, pending, context, model, max_parallel, reasoning_effort)
 
         # ---- Phase 2b: Review & apply patches --------------------------
-        _review_and_apply(state, context, model)
+        _review_and_apply(state, context, model, reasoning_effort)
 
         # ---- Phase 2c: Run checks --------------------------------------
         print(f"[dev_loop] Running project checks...")
@@ -533,14 +559,19 @@ def run_forward_development_loop(
             state.status = "verifying"
             save_state(state)
             print("[dev_loop] Checks passed.")
-            # All pending -> done if checks pass
+            # Only mark in_progress todos as done if they have an applied patch
+            applied_todo_ids = {p.todo_id for p in state.patches if p.applied}
             for t in state.todos:
                 if t.status == "in_progress":
-                    mark_todo_status(state, t.id, "done")
+                    if t.id in applied_todo_ids:
+                        mark_todo_status(state, t.id, "done")
+                    else:
+                        # Patch was never applied — rewind to pending for retry
+                        mark_todo_status(state, t.id, "pending")
             break
         else:
             state.status = "fixing"
-            _handle_check_failure(state, check_log, context, model)
+            _handle_check_failure(state, check_log, context, model, reasoning_effort)
             save_state(state)
 
     # ---- Phase 3: Final acceptance review ------------------------------
@@ -556,7 +587,7 @@ def run_forward_development_loop(
 
     print("[dev_loop] Running final acceptance review...")
     try:
-        review = final_acceptance_review(state.acceptance, full_diff, all_checks, model)
+        review = final_acceptance_review(state.acceptance, full_diff, all_checks, model, reasoning_effort)
         if review.get("accepted", False):
             state.status = "done"
             print("[dev_loop] ACCEPTED: All criteria met.")
@@ -636,6 +667,7 @@ def _implement_todos_parallel(
     context: str,
     model: str,
     max_parallel: int,
+    reasoning_effort: str | None = None,
 ) -> None:
     """Call DeepSeek in parallel to implement pending todos."""
     import json as _json
@@ -652,7 +684,7 @@ def _implement_todos_parallel(
         """Return (todo_id, patch_path, diff_content) or None on failure."""
         try:
             print(f"[dev_loop]   Implementing {todo.id}: {todo.title}")
-            diff = implement_todo(todo, state.acceptance, context, state_json, model)
+            diff = implement_todo(todo, state.acceptance, context, state_json, model, reasoning_effort)
             patch_path = artifact_dir / f"patch_{todo.id}_{state.loop_index}.diff"
             patch_path.write_text(diff, encoding="utf-8")
             mark_todo_status(state, todo.id, "in_progress")
@@ -674,13 +706,10 @@ def _implement_todos_parallel(
     save_state(state)
 
 
-def _review_and_apply(state: LoopState, context: str, model: str) -> None:
+def _review_and_apply(state: LoopState, context: str, model: str,
+                      reasoning_effort: str | None = None) -> None:
     """Review candidate patches and apply those that pass review."""
     artifact_dir = get_artifact_dir()
-    # Find patches from the current loop that haven't been reviewed
-    current_patches = [p for p in state.patches if p.loop_index == state.loop_index]
-    if not current_patches:
-        return
 
     for todo in state.todos:
         if todo.status not in ("in_progress",):
@@ -705,7 +734,7 @@ def _review_and_apply(state: LoopState, context: str, model: str) -> None:
         # Review
         print(f"[dev_loop]   Reviewing {todo.id}...")
         try:
-            review = review_candidate_patch(todo, state.acceptance, patch_content, context, model)
+            review = review_candidate_patch(todo, state.acceptance, patch_content, context, model, reasoning_effort)
         except Exception as e:
             print(f"[dev_loop]   Review failed for {todo.id}: {e}", file=sys.stderr)
             add_bug(state, f"Review failed for {todo.id}", str(e))
@@ -761,7 +790,8 @@ def _review_and_apply(state: LoopState, context: str, model: str) -> None:
     save_state(state)
 
 
-def _handle_check_failure(state: LoopState, check_log: str, context: str, model: str) -> None:
+def _handle_check_failure(state: LoopState, check_log: str, context: str, model: str,
+                           reasoning_effort: str | None = None) -> None:
     """Process a check failure: record bugs and attempt fix."""
     artifact_dir = get_artifact_dir()
 
@@ -776,12 +806,21 @@ def _handle_check_failure(state: LoopState, check_log: str, context: str, model:
 
     record_failure(state, sig)
 
-    # Parse common failure patterns
+    # Parse common failure patterns (ordered: most specific first)
+    import re as _re
     for line in check_log.splitlines():
-        if "FAILED" in line or "FAIL" in line:
-            add_bug(state, f"Check failure: {line.strip()[:120]}", line.strip()[:500], line.strip())
-        elif "error:" in line.lower() or "Error:" in line:
-            add_bug(state, f"Error: {line.strip()[:120]}", line.strip()[:500], line.strip())
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Test-runner / assertion failures
+        if _re.search(r'\b(?:FAILED|FAIL)\b', stripped):
+            add_bug(state, f"Check failure: {stripped[:120]}", stripped[:500], stripped)
+        # Error markers (word-level, not substring)
+        elif _re.search(r'\b(?:ERROR|Error|error)\b', stripped):
+            add_bug(state, f"Error: {stripped[:120]}", stripped[:500], stripped)
+        # Traceback / assertion markers
+        elif "Traceback" in stripped or "AssertionError" in stripped:
+            add_bug(state, f"Traceback/Assertion: {stripped[:120]}", stripped[:500], stripped)
 
     _write_bugs_md(state, artifact_dir)
     save_state(state)
@@ -799,7 +838,7 @@ def _handle_check_failure(state: LoopState, check_log: str, context: str, model:
     )
 
     try:
-        fix_diff = fix_open_bugs(open_bugs, state.acceptance, context, patch_history, model)
+        fix_diff = fix_open_bugs(open_bugs, state.acceptance, context, patch_history, model, reasoning_effort)
         fix_path = artifact_dir / f"fix_{state.loop_index}.diff"
         fix_path.write_text(fix_diff, encoding="utf-8")
 
